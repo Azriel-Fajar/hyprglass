@@ -43,7 +43,7 @@ uniform float fresnelStrength;
 uniform float specularStrength;
 uniform float glassOpacity;
 uniform float edgeThickness;
-uniform float invBezelWidthPx; // = 1.0 / (edgeThickness * minDim), hoisted per-draw
+uniform float invBezelWidthPx; // = 1.0 / (edgeThickness * minDim), hoisted per-draw (minDim: the glass box's smaller side)
 uniform vec3 tintColor;
 uniform float tintAlpha;
 uniform float lensDistortion;
@@ -82,14 +82,19 @@ uniform int maskMode;          // 0 = alpha threshold, 1 = protocol region
 uniform int regionRectCount;   // 0..64
 uniform vec4 regionRects[64];  // box-local pixels: xy = offset from box top-left, zw = size
 
-// Subsurface item glass only: the rounded-box SDF (getCornerSDF below) is
-// evaluated over this sub-rect of the drawn box instead of the full box —
-// the item's blur-region extents, which can be smaller than its own surface
-// box (e.g. a capsule pill inside a wider hit-test area). Box-local pixels,
-// same space as regionRects. Windows and alpha-mask layers pass offset (0,0)
-// and size == fullSize, so the SDF is unchanged from the old whole-box math.
+// The glass shape: the outline, bezel, lens, refraction centre and lighting
+// all follow this sub-rect of the drawn box. Smaller than the drawn box only
+// for subsurface items (e.g. a capsule pill inside a wider hit-test area).
+// Box-local pixels, same space as regionRects. Windows and alpha-mask layers
+// pass offset (0,0) and size == fullSize.
 uniform vec2 glassBoxOffsetPx;
 uniform vec2 glassBoxSizePx;
+// glassUV = uv * glassUVScale - glassUVOffset: 0..1 across the glass box.
+// = fullSize / glassBoxSizePx and glassBoxOffsetPx / glassBoxSizePx, hoisted
+// per-draw; exactly (1,1) and (0,0) when the glass box is the whole box, so
+// glassUV == uv bit for bit for windows and layers.
+uniform vec2 glassUVScale;
+uniform vec2 glassUVOffset;
 
 // Maps this fragment's own box UV into the sample texture's normalized space
 // before uvPadding is applied. Identity (offset 0, scale 1) unless the sample
@@ -143,7 +148,7 @@ float lpNorm(vec2 v, float p, float invP) {
 // Quadrant lookup for the per-corner radius. p is measured from the box
 // center (as getRoundedBoxSDF/getBevelSDF compute it below): negative y is
 // the top half (v_texcoord grows downward — see the specular highlight's
-// 1.0 - uv.y), negative x is the left half. cornerRadii is (top-left,
+// 1.0 - glassUV.y), negative x is the left half. cornerRadii is (top-left,
 // top-right, bottom-right, bottom-left).
 float pickCornerRadius(vec2 p, vec4 cornerRadii) {
     float top    = p.x < 0.0 ? cornerRadii.x : cornerRadii.y;
@@ -205,22 +210,22 @@ float getBevelSDF(vec2 uv) {
 
 // ============================================================================
 // REFRACTION DIRECTION
-// Pixel-space direction toward window center — perfectly smooth everywhere,
+// Pixel-space direction toward the glass box center — perfectly smooth everywhere,
 // no SDF gradient needed (optional edge-following blend below). On straight edges the perpendicular pixel distance
 // dominates, giving approximately edge-normal direction. At corners it
 // naturally follows the diagonal.
 // ============================================================================
 
-vec2 refractionDir(vec2 uv) {
-    vec2 toCenterPx = (vec2(0.5) - uv) * fullSize;
+vec2 refractionDir(vec2 glassUV) {
+    vec2 toCenterPx = (vec2(0.5) - glassUV) * glassBoxSizePx;
     float len = length(toCenterPx);
     return len > 0.1 ? toCenterPx / len : vec2(0.0);
 }
 
-// Smooth edge-following field: points into the box, hugging each edge's normal
+// Smooth edge-following field: points into the glass box, hugging each edge's normal
 // away from the corners and blending crease-free through the diagonals.
-vec2 edgeDir(vec2 posPx) {
-    vec2 halfSize = fullSize * 0.5;
+vec2 edgeDir(vec2 posPx) {   // posPx: from the glass box center
+    vec2 halfSize = max(glassBoxSizePx * 0.5, vec2(0.5)); // a sub-pixel glass box rounds to 0
     vec2 n = abs(posPx) / halfSize;
     vec2 g = sign(posPx) * pow(n, vec2(7.0)) / halfSize;
     float len = length(g);
@@ -311,8 +316,11 @@ void main() {
         if (cornerAlpha < 0.001) discard;
     }
 
-    float minDim = min(fullSize.x, fullSize.y);
-    float bezelWidthPx = edgeThickness * minDim;
+    // Position within the glass box: everything shaped by the glass (bezel, lens,
+    // refraction centre, lighting) follows it, not the drawn box.
+    vec2 glassUV = uv * glassUVScale - glassUVOffset;
+    float minDim = min(glassBoxSizePx.x, glassBoxSizePx.y);
+    float bezelWidthPx = max(edgeThickness * minDim, 1e-4); // same floor as invBezelWidthPx
 
     // ========================================
     // EDGE PROXIMITY + DIRECTION
@@ -327,8 +335,8 @@ void main() {
     // it assumes circular corners, so a superellipse outline keeps the exact SDF
     float bevelSdf = roundingPower == 2.0 ? getBevelSDF(uv) : cornerSdf;
     float edgeProximity = min(exp(bevelSdf * invBezelWidthPx), 1.0);
-    vec2 inwardDir = refractionDir(uv);
-    vec2 posPx = (uv - 0.5) * fullSize; // pixel-space position for the edge-flow direction below
+    vec2 inwardDir = refractionDir(glassUV);
+    vec2 posPx = (glassUV - 0.5) * glassBoxSizePx; // pixel-space position for the edge-flow direction below
 
     // ========================================
     // EDGE REFRACTION
@@ -370,7 +378,7 @@ void main() {
     // ========================================
     vec2 domeUV = vec2(0.0);
     if (lensDistortion > 0.001) {
-        vec2 c = (uv - 0.5) * 2.0;
+        vec2 c = (glassUV - 0.5) * 2.0;
         vec2 dGrad = vec2(
             -4.0 * c.x * (1.0 - c.y * c.y),
             -4.0 * c.y * (1.0 - c.x * c.x)
@@ -485,12 +493,12 @@ void main() {
     // SPECULAR — subtle top highlight (edge zone)
     // ========================================
     if (specularStrength > 0.001) {
-        float specT = max(1.0 - uv.y, 0.0);
+        float specT = max(1.0 - glassUV.y, 0.0);
         if (abs(specularAngle) > 0.001) {
             // rotate the highlight gradient toward the light: at angle 0, lightDir gives
-            // (0,-1) and dot(uv-0.5, L) = 0.5-uv.y, so 0.5+dot(...) reduces to 1-uv.y exactly
+            // (0,-1) and dot(glassUV-0.5, L) = 0.5-glassUV.y, so 0.5+dot(...) reduces to 1-glassUV.y exactly
             vec2 L = lightDir(specularAngle);
-            specT = clamp(0.5 + dot(uv - 0.5, L), 0.0, 1.0);
+            specT = clamp(0.5 + dot(glassUV - 0.5, L), 0.0, 1.0);
         }
         float topBias = pow(specT, 2.0);
         float spec = topBias * edgeProximity * edgeProximity * specularStrength * 0.08;
@@ -501,7 +509,8 @@ void main() {
     // INNER SHADOW (bottom rim)
     // ========================================
     {
-        float bottomBias = pow(uv.y, 2.0);
+        // max(): item fragments just above the glass box have glassUV.y < 0, where pow() is undefined
+        float bottomBias = pow(max(glassUV.y, 0.0), 2.0);
         float shadow = bottomBias * edgeProximity * edgeProximity * 0.06;
         color *= 1.0 - shadow;
     }

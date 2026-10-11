@@ -302,7 +302,7 @@ preset = name:relative, inherits:glass, edge_thickness_px:0
 ```
 
 - Applies to windows, layers and subsurface items
-- Never wider than half the smaller side of the window or layer
+- Never wider than half the smaller side of the glass: the window, the layer, or a subsurface item's shape
 
 ### Layer surfaces
 

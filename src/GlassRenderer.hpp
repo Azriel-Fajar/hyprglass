@@ -50,7 +50,7 @@ struct SFoldedBlur {
 // edge_thickness_px could only flatten the centre's falloff further.
 inline constexpr float EDGE_THICKNESS_PX_MAX_FRACTION = 0.5f;
 
-// Bezel width as a fraction of the drawn box's smaller side. edge_thickness_px is in
+// Bezel width as a fraction of the glass shape's smaller side. edge_thickness_px is in
 // logical pixels (scaled like bevel_size); when it is > 0 it replaces the relative
 // edge_thickness, which is returned untouched otherwise.
 [[nodiscard]] constexpr float effectiveEdgeThickness(float relative, float pixelsLogical, float monitorScale,
@@ -106,7 +106,7 @@ struct SMaskInfo {
     Vector2D sampleUVOffset{0.0, 0.0};
     Vector2D sampleUVScale{1.0, 1.0};
 
-    // Subsurface items only: the rounded-box SDF's own sub-rect within the
+    // Subsurface items only: the glass shape's own sub-rect within the
     // drawn box, box-local pixels (see Shaders.hpp's glassBoxOffsetPx/SizePx).
     // Sentinel (negative size) means "use the full drawn box", applyGlassEffect's
     // old, unconditional behaviour — every other caller (windows, alpha-mask

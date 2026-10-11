@@ -79,6 +79,8 @@ bool CShaderManager::compileGlassShader() {
     glassUniforms.sampleUVScale       = glGetUniformLocation(program, "sampleUVScale");
     glassUniforms.glassBoxOffsetPx    = glGetUniformLocation(program, "glassBoxOffsetPx");
     glassUniforms.glassBoxSizePx      = glGetUniformLocation(program, "glassBoxSizePx");
+    glassUniforms.glassUVScale        = glGetUniformLocation(program, "glassUVScale");
+    glassUniforms.glassUVOffset       = glGetUniformLocation(program, "glassUVOffset");
 
     return true;
 }
