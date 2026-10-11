@@ -36,6 +36,7 @@ namespace GlobalDefaults {
     inline constexpr float   SPECULAR_STRENGTH    = 0.8f;
     inline constexpr float   GLASS_OPACITY        = 1.0f;
     inline constexpr float   EDGE_THICKNESS       = 0.06f;
+    inline constexpr float   EDGE_THICKNESS_PX    = 0.0f; // 0 = use the relative EDGE_THICKNESS
     inline constexpr int64_t TINT_COLOR           = 0x8899aa22;
     inline constexpr float   LENS_DISTORTION      = 0.5f;
     inline constexpr float   REFRACTION_FLOW      = 0.0f;

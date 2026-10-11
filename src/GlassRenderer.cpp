@@ -470,7 +470,12 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
         1.0f / static_cast<float>(fullSize.x), 1.0f / static_cast<float>(fullSize.y));
     glUniform1f(uniforms.invRoundingPower, 1.0f / safeRoundingPower);
 
-    const float edgeThicknessValue = resolvePresetFloat(resolveContext, &SPresetValues::edgeThickness, &SOverridableConfig::edgeThickness);
+    const auto  monitor            = g_pHyprRenderer->m_renderData.pMonitor.lock();
+    const float monitorScale       = monitor && monitor->m_scale > 0.0f ? monitor->m_scale : 1.0f;
+    const float edgeThicknessValue = effectiveEdgeThickness(
+        resolvePresetFloat(resolveContext, &SPresetValues::edgeThickness, &SOverridableConfig::edgeThickness),
+        resolvePresetFloat(resolveContext, &SPresetValues::edgeThicknessPx, &SOverridableConfig::edgeThicknessPx),
+        monitorScale, minDimensionPx);
     const float lensDistortionValue = resolvePresetFloat(resolveContext, &SPresetValues::lensDistortion, &SOverridableConfig::lensDistortion);
     // Epsilon guard matches the shader's own degenerate-size behaviour (bezelWidthPx == 0 would divide by zero).
     glUniform1f(uniforms.invBezelWidthPx, 1.0f / std::max(edgeThicknessValue * minDimensionPx, 1e-4f));
@@ -495,8 +500,7 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     glUniform1f(uniforms.bevelShadow,         resolvePresetFloat(resolveContext, &SPresetValues::bevelShadow, &SOverridableConfig::bevelShadow));
 
     // bevel width is defined in logical px; scale it to framebuffer px per monitor
-    const auto monitor = g_pHyprRenderer->m_renderData.pMonitor.lock();
-    glUniform1f(uniforms.monitorScale, monitor && monitor->m_scale > 0.0f ? monitor->m_scale : 1.0f);
+    glUniform1f(uniforms.monitorScale, monitorScale);
 
     uploadThemeUniforms(resolveContext);
 
