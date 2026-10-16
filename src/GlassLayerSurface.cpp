@@ -325,18 +325,16 @@ void CGlassLayerSurface::sampleAndRedirect(PHLMONITOR monitor, float alpha, bool
     // computed once here and reused by compositeAndRestore()'s regionRects
     // upload later this same frame — never widens boundingBox() or the
     // composite draw, which stay full-layer (see their own resolveMaskSource()
-    // call sites elsewhere in this file). m_cachedRegionSampleBox is likewise
-    // reused by compositeAndRestore() to build the sampleUVOffset/uvScale
-    // uniforms that reconcile the (region-shrunk) sample box against the
-    // full-layer quad UV — see toSampleBoxUV() in Shaders.hpp.
+    // call sites elsewhere in this file). regionSampleBox becomes
+    // m_cachedRegionSampleBox only when the sample is actually taken below.
     const bool isRegionMode = resolveMaskSource() == EMaskSource::PROTOCOL_REGION;
     m_cachedTransformedRegion = isRegionMode ? transformedBlurRegion(monitor, *layerBox) : CRegion{};
     const std::optional<CBox> regionSampleBox = isRegionMode ? regionBoundingBoxAbsolute(monitor, *layerBox) : std::nullopt;
     // A region resize/move is otherwise invisible to backgroundChanged below (a
     // layer's own commit doesn't mark itself dirty) — without this the mask
     // shape would update immediately while the sample stays from the old box.
-    const bool regionBoxChanged = isRegionMode && regionSampleBox != m_cachedRegionSampleBox;
-    m_cachedRegionSampleBox = regionSampleBox;
+    // Also true leaving region mode: the cached texture is still region-shrunk.
+    const bool regionBoxChanged = regionSampleBox != m_cachedRegionSampleBox;
 
     // Brackets everything below, including the conditional resample and the
     // temp-FBO redirect/clear that always runs: GL forbids a concurrent
@@ -396,6 +394,8 @@ void CGlassLayerSurface::sampleAndRedirect(PHLMONITOR monitor, float alpha, bool
         int downscale        = blurStrength >= GlassRenderer::BLUR_DOWNSCALE_THRESHOLD ? GlassRenderer::BLUR_DOWNSCALE_MAX : 1;
 
         GlassRenderer::sampleBackground(m_sampleFramebuffer, xray ? snapshot : source, sampleBox, m_samplePaddingRatio, downscale);
+        // only here: a deferred or cached frame keeps compositing the old texture
+        m_cachedRegionSampleBox = regionSampleBox;
 
         float blurRadius     = blurStrength * 12.0f / downscale;
         int blurIterations   = std::clamp(static_cast<int>(resolvePresetInt(ctx, &SPresetValues::blurIterations, &SOverridableConfig::blurIterations)), 1, 5);
@@ -575,26 +575,21 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha, EM
                 maskInfo.regionRects[0]  = {static_cast<float>(extents.x - transformBox.x), static_cast<float>(extents.y - transformBox.y),
                                              static_cast<float>(extents.w), static_cast<float>(extents.h)};
             }
-
-            // sampleAndRedirect() gave sampleBackground() the region's bounding
-            // box, smaller than the full-layer transformBox this quad draws —
-            // reconcile the quad's own UV into that smaller sample texture's
-            // normalized space before uvPadding applies (toSampleBoxUV() in
-            // Shaders.hpp). Same defensive-recompute fallback as
-            // m_cachedTransformedRegion above, guarded against a degenerate
-            // (zero-size) transformBox since it is the UV remap's denominator.
-            if (transformBox.w > 0.0 && transformBox.h > 0.0) {
-                const CBox sampleBox = m_cachedRegionSampleBox.value_or(regionBoundingBoxAbsolute(monitor, rawBox).value_or(transformBox));
-                maskInfo.sampleUVOffset = Vector2D((sampleBox.x - transformBox.x) / transformBox.w,
-                                                    (sampleBox.y - transformBox.y) / transformBox.h);
-                maskInfo.sampleUVScale  = Vector2D(sampleBox.w / transformBox.w,
-                                                    sampleBox.h / transformBox.h);
-            }
             break;
         }
         case EMaskSource::NONE:
             // hkRenderLayer takes the plain-renderLayer path for NONE; never reaches here.
             break;
+    }
+
+    // A region-mode sample covers only the region's bounding box, smaller than
+    // the full-layer quad: remap the quad UV into that texture (toSampleBoxUV()
+    // in Shaders.hpp). Keyed on the box the cached texture was taken from, not
+    // this frame's mask mode or region, which a deferred resample leaves behind.
+    if (m_cachedRegionSampleBox && transformBox.w > 0.0 && transformBox.h > 0.0) {
+        const CBox& sampleBox   = *m_cachedRegionSampleBox;
+        maskInfo.sampleUVOffset = Vector2D((sampleBox.x - transformBox.x) / transformBox.w, (sampleBox.y - transformBox.y) / transformBox.h);
+        maskInfo.sampleUVScale  = Vector2D(sampleBox.w / transformBox.w, sampleBox.h / transformBox.h);
     }
 
     // The glass shader composites both the glass effect and the surface content

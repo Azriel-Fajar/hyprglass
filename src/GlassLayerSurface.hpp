@@ -103,9 +103,11 @@ class CGlassLayerSurface {
     // shouldn't be (mask source disagreeing between the two calls in one frame).
     CRegion      m_cachedTransformedRegion;
 
-    // Region bounding box computed by sampleAndRedirect() this frame (same
-    // coordinate space as m_cachedTransformedRegion's extents, PROTOCOL_REGION
-    // only, nullopt otherwise). Reused by compositeAndRestore() to build the
+    // Region bounding box the cached sample texture was taken from (same
+    // coordinate space as m_cachedTransformedRegion's extents; nullopt = the
+    // texture covers the full layer box). Written only when sampleAndRedirect()
+    // actually samples, never on a deferred or cache-hit frame, so it always
+    // describes m_sampleFramebuffer. Reused by compositeAndRestore() to build the
     // sampleUVOffset/uvScale mask uniforms that reconcile sampleBackground()'s
     // region-shrunk sample box against the full-layer quad UV (see
     // toSampleBoxUV() in Shaders.hpp) — without this, sampleBlurred() would
