@@ -4,6 +4,7 @@
 #include "PluginConfig.hpp"
 
 #include <chrono>
+#include <optional>
 #include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/render/decorations/IHyprWindowDecoration.hpp>
 #include <hyprland/src/render/Framebuffer.hpp>
@@ -33,6 +34,10 @@ class CGlassDecoration : public IHyprWindowDecoration {
     // decoration whose padded box overlaps a commit from outside the
     // window's own surface tree.
     void markBackgroundDirty();
+
+    // Applies a mark markBackgroundDirty() owed under the rate limit once its
+    // deadline passed, or re-arms the shared timer for it.
+    void flushDeferredResample(std::chrono::steady_clock::time_point now);
 
     // Pure predicate: true when the cached sample must not be reused as-is
     // this frame. Called identically from CGlassPassElement::needsLiveBlur()
@@ -73,6 +78,8 @@ class CGlassDecoration : public IHyprWindowDecoration {
     // must not reuse a sample of the other.
     bool m_cachedFromSnapshot = false;
     std::chrono::steady_clock::time_point m_lastDirtyMark{};
+    // A mark the rate limit held back: the last change of a burst must still land.
+    std::optional<std::chrono::steady_clock::time_point> m_deferredResampleAt;
 
     // Scene generation at the last real sample, plus the monitor it was
     // captured against. SGlobalState::sceneGeneration is deliberately keyed

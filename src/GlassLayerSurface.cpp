@@ -1,4 +1,5 @@
 #include "GlassLayerSurface.hpp"
+#include "BackgroundDamageObserver.hpp"
 #include "BuiltInPresets.hpp"
 #include "Diagnostics.hpp"
 #include "GlassRenderer.hpp"
@@ -268,14 +269,34 @@ void CGlassLayerSurface::markBackgroundDirty() {
     const auto& config = g_pGlobalState->config;
     const int64_t fps = config.layersLiveResampleFps ? **config.layersLiveResampleFps : 0;
     const auto now = std::chrono::steady_clock::now();
-    if (fps > 0 && now - m_lastDirtyMark < std::chrono::nanoseconds(1'000'000'000 / fps))
-        return;
+    if (fps > 0) {
+        const auto interval = std::chrono::nanoseconds(1'000'000'000 / fps);
+        if (now - m_lastDirtyMark < interval) {
+            m_deferredResampleAt = m_lastDirtyMark + interval;
+            BackgroundDamageObserver::deferResample(*m_deferredResampleAt);
+            return;
+        }
+    }
+    m_deferredResampleAt.reset();
     m_lastDirtyMark = now;
 
     m_backgroundDirty = true;
     // damage the full sample region: outside the committed area the framebuffer
     // still holds our previous glass output, which must not be re-sampled
     damageSampleRegion();
+}
+
+void CGlassLayerSurface::flushDeferredResample(std::chrono::steady_clock::time_point now) {
+    if (!m_deferredResampleAt)
+        return;
+
+    if (now < *m_deferredResampleAt) {
+        BackgroundDamageObserver::deferResample(*m_deferredResampleAt);
+        return;
+    }
+
+    m_deferredResampleAt.reset();
+    markBackgroundDirty();
 }
 
 void CGlassLayerSurface::sampleAndRedirect(PHLMONITOR monitor, float alpha, bool xray) {
