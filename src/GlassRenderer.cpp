@@ -465,7 +465,17 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     const float safeRoundingPower = std::max(roundingPower, 1.0f);
 
     // Reciprocals computed once per draw instead of once per pixel in the shader.
-    const float minDimensionPx = static_cast<float>(std::min(fullSize.x, fullSize.y));
+    // Glass box: the sub-rect the SDF is measured against (subsurface items, and
+    // region layers with a namespace radius). Sentinel (negative) falls back to
+    // the whole drawn box, as windows and alpha-mask layers always do.
+    Vector2D glassBoxOffsetPx{0.0, 0.0};
+    Vector2D glassBoxSizePx = fullSize;
+    if (mask && mask->glassBoxSizePx.x >= 0.0 && mask->glassBoxSizePx.y >= 0.0) {
+        glassBoxOffsetPx = mask->glassBoxOffsetPx;
+        glassBoxSizePx   = mask->glassBoxSizePx;
+    }
+    // bezel and dome lens scale with the glass shape, not a larger drawn box
+    const float minDimensionPx = static_cast<float>(std::min(glassBoxSizePx.x, glassBoxSizePx.y));
     glUniform2f(uniforms.invFullSize,
         1.0f / static_cast<float>(fullSize.x), 1.0f / static_cast<float>(fullSize.y));
     glUniform1f(uniforms.invRoundingPower, 1.0f / safeRoundingPower);
@@ -497,6 +507,18 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     // bevel width is defined in logical px; scale it to framebuffer px per monitor
     const auto monitor = g_pHyprRenderer->m_renderData.pMonitor.lock();
     glUniform1f(uniforms.monitorScale, monitor && monitor->m_scale > 0.0f ? monitor->m_scale : 1.0f);
+
+    // displacement-map rim: logical px → framebuffer px
+    {
+        const auto& cfg      = g_pGlobalState->config;
+        const float scale    = monitor && monitor->m_scale > 0.0f ? monitor->m_scale : 1.0f;
+        const float strength = cfg.displacementStrength ? static_cast<float>(**cfg.displacementStrength) : 0.0f;
+        const float depth    = cfg.displacementDepth ? static_cast<float>(**cfg.displacementDepth) : 24.0f;
+        const float yScale   = cfg.displacementYScale ? static_cast<float>(**cfg.displacementYScale) : 0.75f;
+        glUniform1f(uniforms.dispStrengthPx, std::max(strength, 0.0f) * scale);
+        glUniform1f(uniforms.dispDepthPx, std::max(depth, 1.0f) * scale);
+        glUniform1f(uniforms.dispYScale, std::clamp(yScale, 0.0f, 1.0f));
+    }
 
     uploadThemeUniforms(resolveContext);
 
@@ -567,16 +589,6 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     glUniform4f(uniforms.radii, radii[0], radii[1], radii[2], radii[3]);
     shader->setUniformFloat(SHADER_ROUNDING_POWER, safeRoundingPower);
 
-    // Subsurface items only: SDF sub-rect within the drawn box (see
-    // SMaskInfo::glassBoxSizePx). Sentinel (negative) falls back to the whole
-    // box — windows and alpha-mask layers always take this path, unchanged
-    // from before this uniform existed.
-    Vector2D glassBoxOffsetPx{0.0, 0.0};
-    Vector2D glassBoxSizePx = fullSize;
-    if (mask && mask->glassBoxSizePx.x >= 0.0 && mask->glassBoxSizePx.y >= 0.0) {
-        glassBoxOffsetPx = mask->glassBoxOffsetPx;
-        glassBoxSizePx   = mask->glassBoxSizePx;
-    }
     glUniform2f(uniforms.glassBoxOffsetPx, static_cast<float>(glassBoxOffsetPx.x), static_cast<float>(glassBoxOffsetPx.y));
     glUniform2f(uniforms.glassBoxSizePx, static_cast<float>(glassBoxSizePx.x), static_cast<float>(glassBoxSizePx.y));
 

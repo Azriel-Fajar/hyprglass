@@ -555,6 +555,21 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha, EM
                                              static_cast<float>(extents.w), static_cast<float>(extents.h)};
             }
 
+            // A namespace with a radius takes its glass shape (SDF, bevel, refraction)
+            // from the requested region instead of the whole layer box, so a dock
+            // pill inside a tall transparent surface gets its rim on the pill.
+            if (const auto radiusIt = g_pGlobalState->layerNamespaceRadii.find(layerSurface->m_namespace);
+                radiusIt != g_pGlobalState->layerNamespaceRadii.end()) {
+                const auto glassExtents = region.getExtents();
+                if (glassExtents.w > 0.0 && glassExtents.h > 0.0) {
+                    maskInfo.glassBoxOffsetPx = Vector2D(glassExtents.x - transformBox.x, glassExtents.y - transformBox.y);
+                    maskInfo.glassBoxSizePx   = Vector2D(glassExtents.w, glassExtents.h);
+                    const float scale   = monitor && monitor->m_scale > 0.0f ? monitor->m_scale : 1.0f;
+                    const float capsule = static_cast<float>(std::min(glassExtents.w, glassExtents.h)) * 0.5f;
+                    cornerRadius        = radiusIt->second < 0.0f ? capsule : std::min(radiusIt->second * scale, capsule);
+                }
+            }
+
             // sampleAndRedirect() gave sampleBackground() the region's bounding
             // box, smaller than the full-layer transformBox this quad draws —
             // reconcile the quad's own UV into that smaller sample texture's

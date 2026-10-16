@@ -81,6 +81,10 @@ void registerConfig(HANDLE handle) {
     addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_MODES, Config::STRING{});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LAYERS_MASK_FEATHER, Config::FLOAT{0.0});
     addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_FEATHERS, Config::STRING{});
+    addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_NAMESPACE_RADII, Config::STRING{});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::DISPLACEMENT_STRENGTH, Config::FLOAT{0.0});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::DISPLACEMENT_DEPTH, Config::FLOAT{24.0});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::DISPLACEMENT_Y_SCALE, Config::FLOAT{0.75});
     addConfigValue<Config::Values::Int>(handle, ConfigKeys::LAYERS_MANAGE_BLUR, Config::INTEGER{1});
 
     // Subsurface item glass
@@ -295,6 +299,10 @@ void initConfigPointers(HANDLE handle, SPluginConfig& config) {
     config.layersNamespaceMaskModes = getStringPtr(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_MODES);
     config.layersMaskFeather           = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LAYERS_MASK_FEATHER);
     config.layersNamespaceMaskFeathers = getStringPtr(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_FEATHERS);
+    config.layersNamespaceRadii        = getStringPtr(handle, ConfigKeys::LAYERS_NAMESPACE_RADII);
+    config.displacementStrength        = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::DISPLACEMENT_STRENGTH);
+    config.displacementDepth           = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::DISPLACEMENT_DEPTH);
+    config.displacementYScale          = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::DISPLACEMENT_Y_SCALE);
     config.layersManageBlur         = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::LAYERS_MANAGE_BLUR);
 
     config.subsurfacesEnabled = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::SUBSURFACES_ENABLED);

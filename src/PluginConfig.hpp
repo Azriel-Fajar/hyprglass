@@ -125,6 +125,15 @@ inline constexpr auto LAYERS_NAMESPACE_MASK_MODES       = "plugin:hyprglass:laye
 inline constexpr auto LAYERS_MASK_FEATHER               = "plugin:hyprglass:layers:mask_feather";
 inline constexpr auto LAYERS_NAMESPACE_MASK_FEATHERS    = "plugin:hyprglass:layers:namespace_mask_feathers";
 inline constexpr auto LAYERS_MANAGE_BLUR                = "plugin:hyprglass:layers:manage_blur";
+// Region mask only: per-namespace corner radius (logical px, -1 = capsule). A layer listed here
+// takes its glass shape from the region it requested instead of its whole surface box.
+inline constexpr auto LAYERS_NAMESPACE_RADII            = "plugin:hyprglass:layers:namespace_radii";
+
+// Displacement-map rim refraction (rounded-rect bevel, inward normals, quadratic falloff,
+// vertical scale). strength 0 keeps the stock edge refraction. Logical px.
+inline constexpr auto DISPLACEMENT_STRENGTH             = "plugin:hyprglass:displacement:strength";
+inline constexpr auto DISPLACEMENT_DEPTH                = "plugin:hyprglass:displacement:depth";
+inline constexpr auto DISPLACEMENT_Y_SCALE              = "plugin:hyprglass:displacement:y_scale";
 
 // Subsurface item glass support (see GlassSubsurfaceState).
 // Preset resolution: subsurfaces:preset -> layers:preset (if set) -> window default preset.
@@ -368,6 +377,10 @@ struct SPluginConfig {
     StringConfigPtr       layersNamespaceMaskModes;
     Hyprlang::FLOAT* const* layersMaskFeather            = nullptr;
     StringConfigPtr       layersNamespaceMaskFeathers;
+    StringConfigPtr       layersNamespaceRadii;
+    Hyprlang::FLOAT* const* displacementStrength         = nullptr;
+    Hyprlang::FLOAT* const* displacementDepth            = nullptr;
+    Hyprlang::FLOAT* const* displacementYScale           = nullptr;
     Hyprlang::INT* const* layersManageBlur               = nullptr;
 
     Hyprlang::INT* const*   subsurfacesEnabled = nullptr;

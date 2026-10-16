@@ -57,6 +57,11 @@ struct SGlassUniforms {
     // against, in box-local pixels (see Shaders.hpp).
     GLint glassBoxOffsetPx = -1;
     GLint glassBoxSizePx = -1;
+
+    // Displacement-map rim refraction (see Shaders.hpp displacementPx).
+    GLint dispStrengthPx = -1;
+    GLint dispDepthPx = -1;
+    GLint dispYScale = -1;
 };
 
 struct SBlurUniforms {

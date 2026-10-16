@@ -91,6 +91,14 @@ uniform vec4 regionRects[64];  // box-local pixels: xy = offset from box top-lef
 uniform vec2 glassBoxOffsetPx;
 uniform vec2 glassBoxSizePx;
 
+// Displacement-map rim refraction, in framebuffer px: a rounded-rect bevel `dispDepthPx`
+// wide whose normals point inward with quadratic falloff, the vertical pull scaled by
+// dispYScale on flat edges (full pull on the round ends). dispStrengthPx <= 0 keeps the
+// stock edge refraction.
+uniform float dispStrengthPx;
+uniform float dispDepthPx;
+uniform float dispYScale;
+
 // Maps this fragment's own box UV into the sample texture's normalized space
 // before uvPadding is applied. Identity (offset 0, scale 1) unless the sample
 // texture covers a smaller area than this box — PROTOCOL_REGION layers only,
@@ -212,7 +220,7 @@ float getBevelSDF(vec2 uv) {
 // ============================================================================
 
 vec2 refractionDir(vec2 uv) {
-    vec2 toCenterPx = (vec2(0.5) - uv) * fullSize;
+    vec2 toCenterPx = glassBoxOffsetPx + glassBoxSizePx * 0.5 - uv * fullSize;   // toward the glass shape's centre
     float len = length(toCenterPx);
     return len > 0.1 ? toCenterPx / len : vec2(0.0);
 }
@@ -220,7 +228,7 @@ vec2 refractionDir(vec2 uv) {
 // Smooth edge-following field: points into the box, hugging each edge's normal
 // away from the corners and blending crease-free through the diagonals.
 vec2 edgeDir(vec2 posPx) {
-    vec2 halfSize = fullSize * 0.5;
+    vec2 halfSize = glassBoxSizePx * 0.5;
     vec2 n = abs(posPx) / halfSize;
     vec2 g = sign(posPx) * pow(n, vec2(7.0)) / halfSize;
     float len = length(g);
@@ -231,6 +239,31 @@ vec2 edgeDir(vec2 posPx) {
 vec2 lightDir(float angleDeg) {
     float a = radians(angleDeg);
     return vec2(sin(a), -cos(a));
+}
+
+// Offset (framebuffer px) for the background lookup: the displacement map
+//   inside the rounded box, within dispDepthPx of the edge: t = 1 - distToEdge / depth,
+//   n = inward normal * t^2, n.y *= yScale + (1 - yScale) * (dx / d); offset = n * strength / 2
+// (an feDisplacementMap with scale = strength reads (channel - 0.5) * scale, channel = n / 2 + 0.5).
+// The bevel radius is at least the depth, so a square-cornered bar still gets a rim.
+vec2 displacementPx(vec2 uv) {
+    vec2  halfSize = glassBoxSizePx * 0.5;
+    vec2  p        = uv * fullSize - glassBoxOffsetPx - halfSize;
+    float r        = min(max(pickCornerRadius(p, radii), dispDepthPx), min(halfSize.x, halfSize.y));
+    vec2  inner    = max(halfSize - r, vec2(0.0));
+    float dx       = max(abs(p.x) - inner.x, 0.0);
+    float dy       = max(abs(p.y) - inner.y, 0.0);
+    float d        = length(vec2(dx, dy));
+    if (d <= 0.0 || d > r) return vec2(0.0);
+    float distToEdge = r - d;
+    if (distToEdge >= dispDepthPx) return vec2(0.0);
+    float t         = (dispDepthPx - distToEdge) / dispDepthPx;
+    float magnitude = t * t;
+    vec2  outward   = vec2(dx / d * sign(p.x), dy / d * sign(p.y));
+    float capYScale = dispYScale + (1.0 - dispYScale) * (dx / d);
+    vec2  n         = -outward * magnitude;
+    n.y *= capYScale;
+    return n * 0.5 * dispStrengthPx;
 }
 
 // exact outward normal from the SDF gradient; only meaningful right at the edge
@@ -328,7 +361,8 @@ void main() {
     float bevelSdf = roundingPower == 2.0 ? getBevelSDF(uv) : cornerSdf;
     float edgeProximity = min(exp(bevelSdf * invBezelWidthPx), 1.0);
     vec2 inwardDir = refractionDir(uv);
-    vec2 posPx = (uv - 0.5) * fullSize; // pixel-space position for the edge-flow direction below
+    vec2 posPx = uv * fullSize - glassBoxOffsetPx - glassBoxSizePx * 0.5; // from the glass centre, for the edge-flow direction below
+    vec2 guv   = (uv * fullSize - glassBoxOffsetPx) / glassBoxSizePx;      // uv within the glass shape
 
     // ========================================
     // EDGE REFRACTION
@@ -354,6 +388,8 @@ void main() {
         dir = mixedLen > 0.0001 ? mixedDir / mixedLen : inwardDir;
     }
     vec2 baseOffset = dir * refractionMag * invFullSize;
+    if (dispStrengthPx > 0.0)
+        baseOffset = displacementPx(uv) * invFullSize;   // displacement-map rim replaces the stock edge refraction
 
     // ========================================
     // CHROMATIC ABERRATION — per-channel refraction scale
@@ -370,7 +406,7 @@ void main() {
     // ========================================
     vec2 domeUV = vec2(0.0);
     if (lensDistortion > 0.001) {
-        vec2 c = (uv - 0.5) * 2.0;
+        vec2 c = (guv - 0.5) * 2.0;
         vec2 dGrad = vec2(
             -4.0 * c.x * (1.0 - c.y * c.y),
             -4.0 * c.y * (1.0 - c.x * c.x)
@@ -485,12 +521,12 @@ void main() {
     // SPECULAR — subtle top highlight (edge zone)
     // ========================================
     if (specularStrength > 0.001) {
-        float specT = max(1.0 - uv.y, 0.0);
+        float specT = max(1.0 - guv.y, 0.0);
         if (abs(specularAngle) > 0.001) {
             // rotate the highlight gradient toward the light: at angle 0, lightDir gives
             // (0,-1) and dot(uv-0.5, L) = 0.5-uv.y, so 0.5+dot(...) reduces to 1-uv.y exactly
             vec2 L = lightDir(specularAngle);
-            specT = clamp(0.5 + dot(uv - 0.5, L), 0.0, 1.0);
+            specT = clamp(0.5 + dot(guv - 0.5, L), 0.0, 1.0);
         }
         float topBias = pow(specT, 2.0);
         float spec = topBias * edgeProximity * edgeProximity * specularStrength * 0.08;
@@ -501,7 +537,7 @@ void main() {
     // INNER SHADOW (bottom rim)
     // ========================================
     {
-        float bottomBias = pow(uv.y, 2.0);
+        float bottomBias = pow(clamp(guv.y, 0.0, 1.0), 2.0);
         float shadow = bottomBias * edgeProximity * edgeProximity * 0.06;
         color *= 1.0 - shadow;
     }
