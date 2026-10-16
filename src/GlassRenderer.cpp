@@ -384,6 +384,7 @@ void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, in
     shader->setUniformMatrix3fv(SHADER_PROJ, 1, GL_FALSE, FULLSCREEN_PROJECTION);
     shader->setUniformInt(SHADER_TEX, 0);
     glUniform1f(blurUniforms.radius, radius);
+    glUniform1f(blurUniforms.binarize, 0.0f);   // program uniforms persist: a shape map may have left it on
     glBindVertexArray(shader->getUniformLocation(SHADER_SHADER_VAO));
     g_pHyprOpenGL->setViewport(0, 0, width, height);
     glActiveTexture(GL_TEXTURE0);
@@ -408,6 +409,79 @@ void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, in
     // sizes are wrong here on 90°/270° monitors, where m_transformedSize is
     // swapped relative to the framebuffer's native orientation (#41).
     g_pHyprRenderer->blend(true); // Hyprland's state at every element boundary
+    glBindFramebuffer(GL_FRAMEBUFFER, fbId(callerFramebuffer));
+    glBindVertexArray(0);
+    g_pHyprOpenGL->setViewport(0, 0,
+        static_cast<int>(callerFramebuffer->m_size.x),
+        static_cast<int>(callerFramebuffer->m_size.y));
+}
+
+void buildShapeMap(SP<Render::IFramebuffer>& shapeFramebuffer, SP<Render::IFramebuffer>& shapeTempFramebuffer,
+                   SP<Render::IFramebuffer> maskSource, CBox box, float sigmaPx, float threshold,
+                   Vector2D& outPaddingRatio, SP<Render::IFramebuffer> callerFramebuffer) {
+    auto& shaderManager = g_pGlobalState->shaderManager;
+    if (!maskSource || !callerFramebuffer || !shaderManager.isInitialized())
+        return;
+
+    constexpr int DOWNSCALE = 2;
+    sampleBackground(shapeFramebuffer, maskSource, box, outPaddingRatio, DOWNSCALE);
+    if (!shapeFramebuffer)
+        return;
+
+    const int width  = static_cast<int>(shapeFramebuffer->m_size.x);
+    const int height = static_cast<int>(shapeFramebuffer->m_size.y);
+    if (width <= 0 || height <= 0)
+        return;
+
+    if (!shapeTempFramebuffer)
+        shapeTempFramebuffer = g_pHyprRenderer->createFB("hyprglass-shape-temp");
+    if (shapeTempFramebuffer->m_size.x != width || shapeTempFramebuffer->m_size.y != height ||
+        shapeTempFramebuffer->m_drmFormat != shapeFramebuffer->m_drmFormat)
+        shapeTempFramebuffer->alloc(width, height, shapeFramebuffer->m_drmFormat);
+
+    // The blur shader takes at most 8 taps a side (kernel radius = 3 sigma): split a wide
+    // Gaussian into n passes of sigma / sqrt(n), in half-resolution pixels.
+    const float sigmaHalf  = std::max(sigmaPx / DOWNSCALE, 0.5f);
+    const int   iterations = std::clamp(static_cast<int>(std::ceil(std::pow(3.0f * sigmaHalf / 8.0f, 2.0f))), 1, 6);
+    const float radius     = 3.0f * sigmaHalf / std::sqrt(static_cast<float>(iterations));
+
+    static constexpr std::array<float, 9> FULLSCREEN_PROJECTION = {
+        2.0f, 0.0f, 0.0f,
+        0.0f, 2.0f, 0.0f,
+       -1.0f,-1.0f, 1.0f,
+    };
+    const auto& blurUniforms = shaderManager.blurUniforms;
+
+    g_pHyprRenderer->blend(false);
+    if (glIsEnabled(GL_SCISSOR_TEST))
+        glDisable(GL_SCISSOR_TEST);
+    if (glIsEnabled(GL_STENCIL_TEST))
+        glDisable(GL_STENCIL_TEST);
+
+    auto shader = g_pHyprOpenGL->useShader(shaderManager.blurShader);
+    shader->setUniformMatrix3fv(SHADER_PROJ, 1, GL_FALSE, FULLSCREEN_PROJECTION);
+    shader->setUniformInt(SHADER_TEX, 0);
+    glUniform1f(blurUniforms.radius, radius);
+    glBindVertexArray(shader->getUniformLocation(SHADER_SHADER_VAO));
+    g_pHyprOpenGL->setViewport(0, 0, width, height);
+    glActiveTexture(GL_TEXTURE0);
+
+    for (int iteration = 0; iteration < iterations; iteration++) {
+        // only the very first tap reads raw alpha: binarise it there, blur plain values after
+        glUniform1f(blurUniforms.binarize, iteration == 0 ? std::max(threshold, 1e-3f) : 0.0f);
+        glBindFramebuffer(GL_FRAMEBUFFER, fbId(shapeTempFramebuffer));
+        shapeFramebuffer->getTexture()->bind();
+        glUniform2f(blurUniforms.direction, 1.0f / width, 0.0f);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+        glUniform1f(blurUniforms.binarize, 0.0f);
+        glBindFramebuffer(GL_FRAMEBUFFER, fbId(shapeFramebuffer));
+        shapeTempFramebuffer->getTexture()->bind();
+        glUniform2f(blurUniforms.direction, 0.0f, 1.0f / height);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    }
+
+    g_pHyprRenderer->blend(true);
     glBindFramebuffer(GL_FRAMEBUFFER, fbId(callerFramebuffer));
     glBindVertexArray(0);
     g_pHyprOpenGL->setViewport(0, 0,
@@ -449,6 +523,10 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     if (mask && mask->textureId != 0) {
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(mask->target, mask->textureId);
+        if (mask->shapeTextureId != 0) {
+            glActiveTexture(GL_TEXTURE2);
+            glBindTexture(GL_TEXTURE_2D, mask->shapeTextureId);
+        }
         glActiveTexture(GL_TEXTURE0);
     }
 
@@ -562,6 +640,13 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     if (mask && mask->textureId != 0) {
         glUniform1i(uniforms.useMask, 1);
         glUniform1i(uniforms.maskTex, 1);
+        glUniform1i(uniforms.shapeMap, mask->shapeTextureId != 0 ? 1 : 0);
+        if (mask->shapeTextureId != 0) {
+            glUniform1i(uniforms.shapeTex, 2);
+            glUniform2f(uniforms.shapePad, static_cast<float>(mask->shapePad.x), static_cast<float>(mask->shapePad.y));
+            glUniform2f(uniforms.shapeTexel, static_cast<float>(mask->shapeTexel.x), static_cast<float>(mask->shapeTexel.y));
+            glUniform1f(uniforms.shapeSigmaPx, std::max(mask->shapeSigmaPx, 0.5f));
+        }
         glUniform2f(uniforms.maskUVOffset,
             static_cast<float>(mask->uvOffset.x),
             static_cast<float>(mask->uvOffset.y));
@@ -581,6 +666,7 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
             static_cast<float>(mask->sampleUVScale.x), static_cast<float>(mask->sampleUVScale.y));
     } else {
         glUniform1i(uniforms.useMask, 0);
+        glUniform1i(uniforms.shapeMap, 0);
         glUniform1f(uniforms.maskAlphaThreshold, 0.001f);
         glUniform1f(uniforms.maskCoverage, 0.0f);
         glUniform1i(uniforms.maskMode, 0);

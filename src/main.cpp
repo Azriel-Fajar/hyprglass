@@ -309,6 +309,7 @@ static void parseLayerNamespaceFilters() {
     const auto& config = g_pGlobalState->config;
     parseCommaSeparated(config.layersNamespaces, g_pGlobalState->layerNamespaceFilter);
     parseCommaSeparated(config.layersExcludeNamespaces, g_pGlobalState->layerNamespaceExclude);
+    parseCommaSeparated(config.layersNamespaceShapeMaps, g_pGlobalState->layerNamespaceShapeMaps);
 
     g_pGlobalState->layerNamespacePresets.clear();
     parseKeyValuePairs(config.layersNamespacePresets, ':', [&](const std::string& ns, const std::string& preset) {

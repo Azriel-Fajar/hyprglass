@@ -85,6 +85,11 @@ bool CShaderManager::compileGlassShader() {
     glassUniforms.dispProfile         = glGetUniformLocation(program, "dispProfile");
     glassUniforms.dispIor             = glGetUniformLocation(program, "dispIor");
     glassUniforms.mirrorHighlight     = glGetUniformLocation(program, "mirrorHighlight");
+    glassUniforms.shapeMap            = glGetUniformLocation(program, "shapeMap");
+    glassUniforms.shapeTex            = glGetUniformLocation(program, "shapeTex");
+    glassUniforms.shapePad            = glGetUniformLocation(program, "shapePad");
+    glassUniforms.shapeTexel          = glGetUniformLocation(program, "shapeTexel");
+    glassUniforms.shapeSigmaPx        = glGetUniformLocation(program, "shapeSigmaPx");
 
     return true;
 }
@@ -105,6 +110,7 @@ bool CShaderManager::compileBlurShader() {
 
     blurUniforms.direction = glGetUniformLocation(program, "direction");
     blurUniforms.radius    = glGetUniformLocation(program, "blurRadius");
+    blurUniforms.binarize  = glGetUniformLocation(program, "binarize");
 
     return true;
 }

@@ -65,11 +65,19 @@ struct SGlassUniforms {
     GLint dispProfile = -1;
     GLint dispIor = -1;
     GLint mirrorHighlight = -1;
+
+    // Shape map (layers:namespace_shape_maps)
+    GLint shapeMap = -1;
+    GLint shapeTex = -1;
+    GLint shapePad = -1;
+    GLint shapeTexel = -1;
+    GLint shapeSigmaPx = -1;
 };
 
 struct SBlurUniforms {
     GLint direction = -1;
     GLint radius    = -1;
+    GLint binarize  = -1;
 };
 
 class CShaderManager {

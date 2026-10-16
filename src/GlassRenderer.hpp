@@ -93,6 +93,13 @@ struct SMaskInfo {
 
     // Layers only: multiplier on displacement:strength (layers:namespace_displacement).
     float displacementScale = 1.0f;
+
+    // Shape map (layers:namespace_shape_maps): blurred, binarised layer alpha, padded like
+    // the background sample. textureId 0 = off.
+    GLuint   shapeTextureId = 0;
+    Vector2D shapePad{0.0, 0.0};
+    Vector2D shapeTexel{0.0, 0.0};
+    float    shapeSigmaPx = 1.0f;
 };
 
 // Affine map from source-framebuffer pixels into the sample framebuffer.
@@ -131,6 +138,12 @@ void blendOwnContent(SP<Render::IFramebuffer>& sampleFramebuffer, PHLWINDOW wind
 // (monitor fields would be wrong on 90°/270° transformed monitors).
 void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, int iterations,
                     SP<Render::IFramebuffer> callerFramebuffer);
+
+// Shape map: copies `box` of maskSource at half resolution (padded like sampleBackground),
+// binarises its alpha at `threshold` and blurs it with a Gaussian of `sigmaPx` framebuffer px.
+void buildShapeMap(SP<Render::IFramebuffer>& shapeFramebuffer, SP<Render::IFramebuffer>& shapeTempFramebuffer,
+                   SP<Render::IFramebuffer> maskSource, CBox box, float sigmaPx, float threshold,
+                   Vector2D& outPaddingRatio, SP<Render::IFramebuffer> callerFramebuffer);
 
 // When mask is non-null (layers only), the shader composites the surface content
 // over the glass effect in a single pass. When mask is null (windows), the shader

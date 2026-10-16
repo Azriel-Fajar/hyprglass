@@ -83,6 +83,7 @@ void registerConfig(HANDLE handle) {
     addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_FEATHERS, Config::STRING{});
     addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_NAMESPACE_RADII, Config::STRING{});
     addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_NAMESPACE_DISPLACEMENT, Config::STRING{});
+    addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_NAMESPACE_SHAPE_MAPS, Config::STRING{});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::DISPLACEMENT_STRENGTH, Config::FLOAT{0.0});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::DISPLACEMENT_DEPTH, Config::FLOAT{24.0});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::DISPLACEMENT_Y_SCALE, Config::FLOAT{0.75});
@@ -305,6 +306,7 @@ void initConfigPointers(HANDLE handle, SPluginConfig& config) {
     config.layersNamespaceMaskFeathers = getStringPtr(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_FEATHERS);
     config.layersNamespaceRadii        = getStringPtr(handle, ConfigKeys::LAYERS_NAMESPACE_RADII);
     config.layersNamespaceDisplacement = getStringPtr(handle, ConfigKeys::LAYERS_NAMESPACE_DISPLACEMENT);
+    config.layersNamespaceShapeMaps    = getStringPtr(handle, ConfigKeys::LAYERS_NAMESPACE_SHAPE_MAPS);
     config.displacementStrength        = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::DISPLACEMENT_STRENGTH);
     config.displacementDepth           = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::DISPLACEMENT_DEPTH);
     config.displacementYScale          = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::DISPLACEMENT_Y_SCALE);

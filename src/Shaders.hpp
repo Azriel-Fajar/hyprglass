@@ -102,6 +102,18 @@ uniform int   dispProfile;       // 0 = quadratic ramp, 1 = convex squircle beze
 uniform float dispIor;           // index of refraction for profile 1
 uniform float mirrorHighlight;   // 0..1: the bevel line also lights the side away from the light
 
+// Shape map (layers:namespace_shape_maps): the layer's alpha, binarised and blurred (Gaussian sigma
+// shapeSigmaPx), padded like the background sample. A blurred step edge reads 0.5 at the edge, so the
+// distance inside is sigma * logit(b) / 1.702 (logistic fit of the Gaussian CDF) and the gradient
+// points inward. Any number of shapes, any radii; it follows animations and fades.
+uniform int       shapeMap;
+uniform sampler2D shapeTex;
+uniform vec2      shapePad;
+uniform vec2      shapeTexel;
+uniform float     shapeSigmaPx;
+float g_edgeDist = 0.0;           // shape map: px inside the nearest edge
+vec2  g_inward   = vec2(0.0);     // shape map: unit normal pointing into the shape
+
 // Maps this fragment's own box UV into the sample texture's normalized space
 // before uvPadding is applied. Identity (offset 0, scale 1) unless the sample
 // texture covers a smaller area than this box — PROTOCOL_REGION layers only,
@@ -249,19 +261,41 @@ vec2 lightDir(float angleDeg) {
 //   n = inward normal * t^2, n.y *= yScale + (1 - yScale) * (dx / d); offset = n * strength / 2
 // (an feDisplacementMap with scale = strength reads (channel - 0.5) * scale, channel = n / 2 + 0.5).
 // The bevel radius is at least the depth, so a square-cornered bar still gets a rim.
+float shapeB(vec2 suv) { return texture(shapeTex, clamp(suv, 0.0, 1.0)).a; }
+
+void evalShapeMap(vec2 uv) {
+    vec2  suv = uv * (1.0 - 2.0 * shapePad) + shapePad;
+    float b   = clamp(shapeB(suv), 0.002, 0.998);
+    g_edgeDist = max(shapeSigmaPx * log(b / (1.0 - b)) / 1.702, 0.0);
+    vec2  g   = vec2(shapeB(suv + vec2(shapeTexel.x, 0.0)) - shapeB(suv - vec2(shapeTexel.x, 0.0)),
+                     shapeB(suv + vec2(0.0, shapeTexel.y)) - shapeB(suv - vec2(0.0, shapeTexel.y)));
+    float len = length(g);
+    g_inward  = len > 1e-5 ? g / len : vec2(0.0);
+}
+
 vec2 displacementPx(vec2 uv) {
-    vec2  halfSize = glassBoxSizePx * 0.5;
-    vec2  p        = uv * fullSize - glassBoxOffsetPx - halfSize;
-    float r        = min(max(pickCornerRadius(p, radii), dispDepthPx), min(halfSize.x, halfSize.y));
-    vec2  inner    = max(halfSize - r, vec2(0.0));
-    float dx       = max(abs(p.x) - inner.x, 0.0);
-    float dy       = max(abs(p.y) - inner.y, 0.0);
-    float d        = length(vec2(dx, dy));
-    if (d <= 0.0 || d > r) return vec2(0.0);
-    float distToEdge = r - d;
+    float distToEdge;
+    vec2  outward;
+    float capYScale;
+    if (shapeMap == 1) {
+        if (dot(g_inward, g_inward) < 0.5) return vec2(0.0);
+        distToEdge = g_edgeDist;
+        outward    = -g_inward;
+        capYScale  = dispYScale + (1.0 - dispYScale) * abs(outward.x);
+    } else {
+        vec2  halfSize = glassBoxSizePx * 0.5;
+        vec2  p        = uv * fullSize - glassBoxOffsetPx - halfSize;
+        float r        = min(max(pickCornerRadius(p, radii), dispDepthPx), min(halfSize.x, halfSize.y));
+        vec2  inner    = max(halfSize - r, vec2(0.0));
+        float dx       = max(abs(p.x) - inner.x, 0.0);
+        float dy       = max(abs(p.y) - inner.y, 0.0);
+        float d        = length(vec2(dx, dy));
+        if (d <= 0.0 || d > r) return vec2(0.0);
+        distToEdge = r - d;
+        outward    = vec2(dx / d * sign(p.x), dy / d * sign(p.y));
+        capYScale  = dispYScale + (1.0 - dispYScale) * (dx / d);
+    }
     if (distToEdge >= dispDepthPx) return vec2(0.0);
-    vec2  outward   = vec2(dx / d * sign(p.x), dy / d * sign(p.y));
-    float capYScale = dispYScale + (1.0 - dispYScale) * (dx / d);
     vec2  n;
     if (dispProfile == 1) {
         // Thick convex glass: bezel height h(u) = (1 - (1-u)^4)^(1/4), u = 0 at the edge, 1 where the
@@ -328,7 +362,7 @@ void main() {
         } else {
             // Below the threshold the content gets no glass but is still drawn
             // (shadows, faint fills), like outside a region.
-            if (surfacePixel.a < maskAlphaThreshold) { fragColor = surfacePixel; return; } // premultiplied, output as-is
+            if (shapeMap == 0 && surfacePixel.a < maskAlphaThreshold) { fragColor = surfacePixel; return; } // premultiplied, output as-is
             // Antialiased edges get proportionally less glass, so rounded corners fade
             // out instead of ending on a hard, stepped edge. Not smoothstep(): it is undefined
             // when threshold + coverage rounds to threshold in float.
@@ -339,8 +373,18 @@ void main() {
         }
     }
 
-    float cornerSdf    = getCornerSDF(uv);
-    float cornerAlpha  = 1.0 - smoothstep(-1.5, 0.5, cornerSdf);
+    if (shapeMap == 1) {
+        // coverage from the layer's own alpha: none below a quarter of the threshold (probes,
+        // faint shadows), full from the threshold up, a ramp across antialiased edges and fades
+        float thr = max(maskAlphaThreshold, 1e-3);
+        float cov = clamp((surfacePixel.a - 0.25 * thr) / (0.75 * thr), 0.0, 1.0);
+        if (cov < 0.004) { fragColor = surfacePixel; return; }
+        maskRamp = cov;
+        evalShapeMap(uv);
+    }
+
+    float cornerSdf    = shapeMap == 1 ? -g_edgeDist : getCornerSDF(uv);
+    float cornerAlpha  = shapeMap == 1 ? 1.0 : 1.0 - smoothstep(-1.5, 0.5, cornerSdf);
 
     if (maskMode == 1) {
         // Subsurface items: the glass box (glassBoxOffsetPx/SizePx) can be
@@ -364,7 +408,7 @@ void main() {
     }
 
     float minDim = min(fullSize.x, fullSize.y);
-    float bezelWidthPx = edgeThickness * minDim;
+    float bezelWidthPx = shapeMap == 1 ? max(dispDepthPx, 1.0) : edgeThickness * minDim;
 
     // ========================================
     // EDGE PROXIMITY + DIRECTION
@@ -377,9 +421,9 @@ void main() {
     // ========================================
     // crease-free bevel distance, so the edge has no seam along the corner diagonals;
     // it assumes circular corners, so a superellipse outline keeps the exact SDF
-    float bevelSdf = roundingPower == 2.0 ? getBevelSDF(uv) : cornerSdf;
-    float edgeProximity = min(exp(bevelSdf * invBezelWidthPx), 1.0);
-    vec2 inwardDir = refractionDir(uv);
+    float bevelSdf = (shapeMap == 0 && roundingPower == 2.0) ? getBevelSDF(uv) : cornerSdf;
+    float edgeProximity = min(exp(bevelSdf * (shapeMap == 1 ? 1.0 / bezelWidthPx : invBezelWidthPx)), 1.0);
+    vec2 inwardDir = shapeMap == 1 ? g_inward : refractionDir(uv);
     vec2 posPx = uv * fullSize - glassBoxOffsetPx - glassBoxSizePx * 0.5; // from the glass centre, for the edge-flow direction below
     vec2 guv   = (uv * fullSize - glassBoxOffsetPx) / glassBoxSizePx;      // uv within the glass shape
 
@@ -424,7 +468,7 @@ void main() {
     // Fades near edges so it doesn't interfere with edge refraction.
     // ========================================
     vec2 domeUV = vec2(0.0);
-    if (lensDistortion > 0.001) {
+    if (lensDistortion > 0.001 && shapeMap == 0) {
         vec2 c = (guv - 0.5) * 2.0;
         vec2 dGrad = vec2(
             -4.0 * c.x * (1.0 - c.y * c.y),
@@ -505,7 +549,7 @@ void main() {
         float ring = (1.0 - smoothstep(-core, 0.0, cornerSdf)) * smoothstep(-tail, -core, cornerSdf);
 
         // lit side faces the light, the far side fades out and can be shadowed
-        float lightDot = dot(sdfOutwardNormal(uv), lightDir(bevelAngle));
+        float lightDot = dot(shapeMap == 1 ? -g_inward : sdfOutwardNormal(uv), lightDir(bevelAngle));
         float facing   = clamp(lightDot * 0.5 + 0.5, 0.0, 1.0);
         facing = mix(facing, abs(lightDot), mirrorHighlight);   // the rim opposite the light catches it too
 
@@ -543,7 +587,10 @@ void main() {
     // ========================================
     if (specularStrength > 0.001) {
         float specT = max(1.0 - guv.y, 0.0);
-        if (abs(specularAngle) > 0.001) {
+        if (shapeMap == 1) {
+            // per shape: the rim whose outward normal faces the light
+            specT = clamp(0.5 + 0.5 * dot(-g_inward, lightDir(specularAngle)), 0.0, 1.0);
+        } else if (abs(specularAngle) > 0.001) {
             // rotate the highlight gradient toward the light: at angle 0, lightDir gives
             // (0,-1) and dot(uv-0.5, L) = 0.5-uv.y, so 0.5+dot(...) reduces to 1-uv.y exactly
             vec2 L = lightDir(specularAngle);
@@ -558,7 +605,7 @@ void main() {
     // INNER SHADOW (bottom rim)
     // ========================================
     {
-        float bottomBias = pow(clamp(guv.y, 0.0, 1.0), 2.0);
+        float bottomBias = pow(clamp(shapeMap == 1 ? 0.5 + 0.5 * (-g_inward.y) : guv.y, 0.0, 1.0), 2.0);
         float shadow = bottomBias * edgeProximity * edgeProximity * 0.06;
         color *= 1.0 - shadow;
     }
@@ -598,6 +645,12 @@ precision highp float;
 uniform sampler2D tex;
 uniform vec2 direction; // (1.0/width, 0.0) for horizontal, (0.0, 1.0/height) for vertical
 uniform float blurRadius; // kernel radius in pixels
+uniform float binarize;   // > 0: each tap is step(binarize, alpha) in every channel (shape maps, first pass)
+
+vec4 tap(vec2 uv) {
+    vec4 c = clamp(texture(tex, uv), 0.0, 1.0);
+    return binarize > 0.0 ? vec4(step(binarize, c.a)) : c;
+}
 
 in vec2 v_texcoord;
 layout(location = 0) out vec4 fragColor;
@@ -611,7 +664,7 @@ void main() {
 
     // Center tap, clamped: an out-of-range texel from a float framebuffer would otherwise dominate the kernel
     float w0 = 1.0;
-    vec4 result = clamp(texture(tex, v_texcoord), 0.0, 1.0) * w0;
+    vec4 result = tap(v_texcoord) * w0;
     float totalWeight = w0;
 
     // Linear sampling: pair adjacent taps (i, i+1) into a single bilinear fetch.
@@ -628,8 +681,8 @@ void main() {
         // Offset biased toward the heavier weight
         float offset = (x1 * w1 + x2 * w2) / wSum;
 
-        result += clamp(texture(tex, v_texcoord + direction * offset), 0.0, 1.0) * wSum;
-        result += clamp(texture(tex, v_texcoord - direction * offset), 0.0, 1.0) * wSum;
+        result += tap(v_texcoord + direction * offset) * wSum;
+        result += tap(v_texcoord - direction * offset) * wSum;
         totalWeight += 2.0 * wSum;
     }
 

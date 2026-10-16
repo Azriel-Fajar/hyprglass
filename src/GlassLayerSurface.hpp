@@ -63,6 +63,10 @@ class CGlassLayerSurface {
     SP<Render::IFramebuffer> m_sampleFramebuffer;
     SP<Render::IFramebuffer> m_surfaceTempFramebuffer;
     Vector2D     m_samplePaddingRatio;
+    // shape map (layers:namespace_shape_maps)
+    SP<Render::IFramebuffer> m_shapeFramebuffer;
+    SP<Render::IFramebuffer> m_shapeTempFramebuffer;
+    Vector2D     m_shapePaddingRatio;
     bool         m_hasCachedSample = false;
     bool         m_backgroundDirty = false;
     std::chrono::steady_clock::time_point m_lastDirtyMark{};

@@ -130,6 +130,9 @@ inline constexpr auto LAYERS_MANAGE_BLUR                = "plugin:hyprglass:laye
 inline constexpr auto LAYERS_NAMESPACE_RADII            = "plugin:hyprglass:layers:namespace_radii";
 // Per-namespace multiplier on displacement:strength (ns=factor), e.g. a thin bar wants less pull.
 inline constexpr auto LAYERS_NAMESPACE_DISPLACEMENT     = "plugin:hyprglass:layers:namespace_displacement";
+// Comma-separated namespaces whose glass takes its shapes from the layer's own alpha (any number of
+// shapes, any radii; follows animations and fades). In region mode the region only limits where.
+inline constexpr auto LAYERS_NAMESPACE_SHAPE_MAPS       = "plugin:hyprglass:layers:namespace_shape_maps";
 
 // Displacement-map rim refraction (rounded-rect bevel, inward normals, quadratic falloff,
 // vertical scale). strength 0 keeps the stock edge refraction. Logical px.
@@ -386,6 +389,7 @@ struct SPluginConfig {
     StringConfigPtr       layersNamespaceMaskFeathers;
     StringConfigPtr       layersNamespaceRadii;
     StringConfigPtr       layersNamespaceDisplacement;
+    StringConfigPtr       layersNamespaceShapeMaps;
     Hyprlang::FLOAT* const* displacementStrength         = nullptr;
     Hyprlang::FLOAT* const* displacementDepth            = nullptr;
     Hyprlang::FLOAT* const* displacementYScale           = nullptr;

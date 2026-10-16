@@ -80,6 +80,8 @@ struct SGlobalState {
     std::unordered_map<std::string, float> layerNamespaceRadii;
     // Per-namespace multiplier on displacement:strength
     std::unordered_map<std::string, float> layerNamespaceDisplacement;
+    // Namespaces whose glass shapes come from their own alpha (layers:namespace_shape_maps)
+    std::unordered_set<std::string> layerNamespaceShapeMaps;
 
     // Per-monitor generation counter, incremented when the scene behind layers
     // changes on that monitor. Layer surfaces compare to their cached value to

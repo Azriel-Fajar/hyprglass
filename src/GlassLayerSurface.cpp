@@ -595,6 +595,31 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha, EM
             break;
     }
 
+    // Shape map: the glass takes its shapes from this layer's own alpha; the rim comes
+    // from a blurred, binarised copy of it (see buildShapeMap / Shaders.hpp evalShapeMap).
+    if (g_pGlobalState->layerNamespaceShapeMaps.contains(layerSurface->m_namespace)) {
+        const auto& cfg     = g_pGlobalState->config;
+        float maskThreshold = cfg.layersMaskThreshold ? static_cast<float>(**cfg.layersMaskThreshold) : 0.001f;
+        if (const auto threshIt = g_pGlobalState->layerNamespaceMaskThresholds.find(layerSurface->m_namespace);
+            threshIt != g_pGlobalState->layerNamespaceMaskThresholds.end())
+            maskThreshold = threshIt->second;
+        const float fade  = std::clamp(alpha, 0.0f, 1.0f);
+        const float scale = monitor && monitor->m_scale > 0.0f ? monitor->m_scale : 1.0f;
+        const float depth = cfg.displacementDepth ? static_cast<float>(**cfg.displacementDepth) : 24.0f;
+        const float sigma = std::max(std::max(depth, 1.0f) * scale * 0.4f, 1.0f);
+
+        GlassRenderer::buildShapeMap(m_shapeFramebuffer, m_shapeTempFramebuffer, m_surfaceTempFramebuffer,
+                                     transformBox, sigma, maskThreshold * 0.5f * fade, m_shapePaddingRatio, target);
+        if (m_shapeFramebuffer && m_shapeFramebuffer->getTexture()) {
+            maskInfo.shapeTextureId = m_shapeFramebuffer->getTexture()->m_texID;
+            maskInfo.shapePad       = m_shapePaddingRatio;
+            maskInfo.shapeTexel     = Vector2D(1.0 / std::max(m_shapeFramebuffer->m_size.x, 1.0),
+                                               1.0 / std::max(m_shapeFramebuffer->m_size.y, 1.0));
+            maskInfo.shapeSigmaPx   = sigma;
+            maskInfo.alphaThreshold = maskThreshold * fade;   // coverage reference, also in region mode
+        }
+    }
+
     // The glass shader composites both the glass effect and the surface content
     // in a single pass: glass behind, surface on top, using the temp FBO alpha.
     GlassRenderer::applyGlassEffect(m_sampleFramebuffer, target,
