@@ -82,6 +82,9 @@ bool CShaderManager::compileGlassShader() {
     glassUniforms.dispStrengthPx      = glGetUniformLocation(program, "dispStrengthPx");
     glassUniforms.dispDepthPx         = glGetUniformLocation(program, "dispDepthPx");
     glassUniforms.dispYScale          = glGetUniformLocation(program, "dispYScale");
+    glassUniforms.dispProfile         = glGetUniformLocation(program, "dispProfile");
+    glassUniforms.dispIor             = glGetUniformLocation(program, "dispIor");
+    glassUniforms.mirrorHighlight     = glGetUniformLocation(program, "mirrorHighlight");
 
     return true;
 }

@@ -86,6 +86,9 @@ void registerConfig(HANDLE handle) {
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::DISPLACEMENT_STRENGTH, Config::FLOAT{0.0});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::DISPLACEMENT_DEPTH, Config::FLOAT{24.0});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::DISPLACEMENT_Y_SCALE, Config::FLOAT{0.75});
+    addConfigValue<Config::Values::Int>(handle, ConfigKeys::DISPLACEMENT_PROFILE, Config::INTEGER{0});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::DISPLACEMENT_IOR, Config::FLOAT{1.5});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::DISPLACEMENT_MIRROR_HIGHLIGHT, Config::FLOAT{0.0});
     addConfigValue<Config::Values::Int>(handle, ConfigKeys::LAYERS_MANAGE_BLUR, Config::INTEGER{1});
 
     // Subsurface item glass
@@ -305,6 +308,9 @@ void initConfigPointers(HANDLE handle, SPluginConfig& config) {
     config.displacementStrength        = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::DISPLACEMENT_STRENGTH);
     config.displacementDepth           = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::DISPLACEMENT_DEPTH);
     config.displacementYScale          = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::DISPLACEMENT_Y_SCALE);
+    config.displacementProfile         = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::DISPLACEMENT_PROFILE);
+    config.displacementIor             = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::DISPLACEMENT_IOR);
+    config.displacementMirrorHighlight = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::DISPLACEMENT_MIRROR_HIGHLIGHT);
     config.layersManageBlur         = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::LAYERS_MANAGE_BLUR);
 
     config.subsurfacesEnabled = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::SUBSURFACES_ENABLED);

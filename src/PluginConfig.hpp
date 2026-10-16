@@ -136,6 +136,11 @@ inline constexpr auto LAYERS_NAMESPACE_DISPLACEMENT     = "plugin:hyprglass:laye
 inline constexpr auto DISPLACEMENT_STRENGTH             = "plugin:hyprglass:displacement:strength";
 inline constexpr auto DISPLACEMENT_DEPTH                = "plugin:hyprglass:displacement:depth";
 inline constexpr auto DISPLACEMENT_Y_SCALE              = "plugin:hyprglass:displacement:y_scale";
+// 0 = quadratic ramp (t^2), 1 = convex squircle bezel refracted with Snell's law (strength 100 = physical)
+inline constexpr auto DISPLACEMENT_PROFILE              = "plugin:hyprglass:displacement:profile";
+inline constexpr auto DISPLACEMENT_IOR                  = "plugin:hyprglass:displacement:ior";
+// 0..1: the bevel highlight also lights the side away from the light, like Apple's rim
+inline constexpr auto DISPLACEMENT_MIRROR_HIGHLIGHT     = "plugin:hyprglass:displacement:mirror_highlight";
 
 // Subsurface item glass support (see GlassSubsurfaceState).
 // Preset resolution: subsurfaces:preset -> layers:preset (if set) -> window default preset.
@@ -384,6 +389,9 @@ struct SPluginConfig {
     Hyprlang::FLOAT* const* displacementStrength         = nullptr;
     Hyprlang::FLOAT* const* displacementDepth            = nullptr;
     Hyprlang::FLOAT* const* displacementYScale           = nullptr;
+    Hyprlang::INT* const*   displacementProfile          = nullptr;
+    Hyprlang::FLOAT* const* displacementIor              = nullptr;
+    Hyprlang::FLOAT* const* displacementMirrorHighlight  = nullptr;
     Hyprlang::INT* const* layersManageBlur               = nullptr;
 
     Hyprlang::INT* const*   subsurfacesEnabled = nullptr;

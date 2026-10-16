@@ -98,6 +98,9 @@ uniform vec2 glassBoxSizePx;
 uniform float dispStrengthPx;
 uniform float dispDepthPx;
 uniform float dispYScale;
+uniform int   dispProfile;       // 0 = quadratic ramp, 1 = convex squircle bezel + Snell refraction
+uniform float dispIor;           // index of refraction for profile 1
+uniform float mirrorHighlight;   // 0..1: the bevel line also lights the side away from the light
 
 // Maps this fragment's own box UV into the sample texture's normalized space
 // before uvPadding is applied. Identity (offset 0, scale 1) unless the sample
@@ -257,13 +260,29 @@ vec2 displacementPx(vec2 uv) {
     if (d <= 0.0 || d > r) return vec2(0.0);
     float distToEdge = r - d;
     if (distToEdge >= dispDepthPx) return vec2(0.0);
-    float t         = (dispDepthPx - distToEdge) / dispDepthPx;
-    float magnitude = t * t;
     vec2  outward   = vec2(dx / d * sign(p.x), dy / d * sign(p.y));
     float capYScale = dispYScale + (1.0 - dispYScale) * (dx / d);
-    vec2  n         = -outward * magnitude;
+    vec2  n;
+    if (dispProfile == 1) {
+        // Thick convex glass: bezel height h(u) = (1 - (1-u)^4)^(1/4), u = 0 at the edge, 1 where the
+        // flat top starts, bezel as tall as it is wide. A straight-down view ray refracts at the surface
+        // (Snell, n = dispIor) and crosses the local glass height to the backdrop; its sideways travel
+        // peaks just inside the rim and fades to zero on the flat top. Strength 100 = that shift.
+        float u     = clamp(distToEdge / dispDepthPx, 0.002, 1.0);
+        float k     = 1.0 - u;
+        float k4    = k * k * k * k;
+        float h     = pow(1.0 - k4, 0.25);
+        float slope = k * k * k * pow(max(1.0 - k4, 1e-4), -0.75);
+        float ti    = atan(slope);
+        float tt    = asin(clamp(sin(ti) / dispIor, -1.0, 1.0));
+        float shift = tan(ti - tt) * h * dispDepthPx;
+        n = -outward * shift * 0.01 * dispStrengthPx;
+    } else {
+        float t = (dispDepthPx - distToEdge) / dispDepthPx;
+        n = -outward * t * t * 0.5 * dispStrengthPx;
+    }
     n.y *= capYScale;
-    return n * 0.5 * dispStrengthPx;
+    return n;
 }
 
 // exact outward normal from the SDF gradient; only meaningful right at the edge
@@ -486,7 +505,9 @@ void main() {
         float ring = (1.0 - smoothstep(-core, 0.0, cornerSdf)) * smoothstep(-tail, -core, cornerSdf);
 
         // lit side faces the light, the far side fades out and can be shadowed
-        float facing = clamp(dot(sdfOutwardNormal(uv), lightDir(bevelAngle)) * 0.5 + 0.5, 0.0, 1.0);
+        float lightDot = dot(sdfOutwardNormal(uv), lightDir(bevelAngle));
+        float facing   = clamp(lightDot * 0.5 + 0.5, 0.0, 1.0);
+        facing = mix(facing, abs(lightDot), mirrorHighlight);   // the rim opposite the light catches it too
 
         vec3 bevelLight = vec3(1.0);
         if (bevelColorAlpha > 0.001) bevelLight = mix(vec3(1.0), bevelColor, bevelColorAlpha);   // a dark colour gives a dark line

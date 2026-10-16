@@ -519,6 +519,12 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
         glUniform1f(uniforms.dispStrengthPx, std::max(strength, 0.0f) * factor * scale);
         glUniform1f(uniforms.dispDepthPx, std::max(depth, 1.0f) * scale);
         glUniform1f(uniforms.dispYScale, std::clamp(yScale, 0.0f, 1.0f));
+        const int   profile  = cfg.displacementProfile ? static_cast<int>(**cfg.displacementProfile) : 0;
+        const float ior      = cfg.displacementIor ? static_cast<float>(**cfg.displacementIor) : 1.5f;
+        const float mirror   = cfg.displacementMirrorHighlight ? static_cast<float>(**cfg.displacementMirrorHighlight) : 0.0f;
+        glUniform1i(uniforms.dispProfile, profile == 1 ? 1 : 0);
+        glUniform1f(uniforms.dispIor, std::max(ior, 1.0f));
+        glUniform1f(uniforms.mirrorHighlight, std::clamp(mirror, 0.0f, 1.0f));
     }
 
     uploadThemeUniforms(resolveContext);

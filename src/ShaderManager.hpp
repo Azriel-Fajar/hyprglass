@@ -62,6 +62,9 @@ struct SGlassUniforms {
     GLint dispStrengthPx = -1;
     GLint dispDepthPx = -1;
     GLint dispYScale = -1;
+    GLint dispProfile = -1;
+    GLint dispIor = -1;
+    GLint mirrorHighlight = -1;
 };
 
 struct SBlurUniforms {
