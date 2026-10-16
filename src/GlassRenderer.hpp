@@ -90,6 +90,9 @@ struct SMaskInfo {
     // layers) leaves this at the default and sees no change at all.
     Vector2D glassBoxOffsetPx{0.0, 0.0};
     Vector2D glassBoxSizePx{-1.0, -1.0};
+
+    // Layers only: multiplier on displacement:strength (layers:namespace_displacement).
+    float displacementScale = 1.0f;
 };
 
 // Affine map from source-framebuffer pixels into the sample framebuffer.

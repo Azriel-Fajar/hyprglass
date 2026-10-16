@@ -343,6 +343,11 @@ static void parseLayerNamespaceFilters() {
     parseKeyValuePairs(config.layersNamespaceRadii, '=', [&](const std::string& ns, const std::string& val) {
         try { g_pGlobalState->layerNamespaceRadii.emplace(ns, std::stof(val)); } catch (...) {}
     });
+
+    g_pGlobalState->layerNamespaceDisplacement.clear();
+    parseKeyValuePairs(config.layersNamespaceDisplacement, '=', [&](const std::string& ns, const std::string& val) {
+        try { g_pGlobalState->layerNamespaceDisplacement.emplace(ns, std::stof(val)); } catch (...) {}
+    });
 }
 
 static bool shouldGlassLayer(PHLLS layerSurface) {

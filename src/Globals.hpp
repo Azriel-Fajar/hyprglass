@@ -78,6 +78,8 @@ struct SGlobalState {
     std::unordered_map<std::string, float> layerNamespaceMaskFeathers;
     // Per-namespace glass corner radius for region layers (namespace → logical px, -1 = capsule)
     std::unordered_map<std::string, float> layerNamespaceRadii;
+    // Per-namespace multiplier on displacement:strength
+    std::unordered_map<std::string, float> layerNamespaceDisplacement;
 
     // Per-monitor generation counter, incremented when the scene behind layers
     // changes on that monitor. Layer surfaces compare to their cached value to

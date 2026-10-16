@@ -503,6 +503,10 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha, EM
         .uvScale   = {transformBox.w / monitorWidth, transformBox.h / monitorHeight},
     };
 
+    if (const auto dispIt = g_pGlobalState->layerNamespaceDisplacement.find(layerSurface->m_namespace);
+        dispIt != g_pGlobalState->layerNamespaceDisplacement.end())
+        maskInfo.displacementScale = dispIt->second;
+
     switch (maskSource) {
         case EMaskSource::ALPHA_THRESHOLD: {
             const auto& cfg     = g_pGlobalState->config;

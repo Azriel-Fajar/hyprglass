@@ -515,7 +515,8 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
         const float strength = cfg.displacementStrength ? static_cast<float>(**cfg.displacementStrength) : 0.0f;
         const float depth    = cfg.displacementDepth ? static_cast<float>(**cfg.displacementDepth) : 24.0f;
         const float yScale   = cfg.displacementYScale ? static_cast<float>(**cfg.displacementYScale) : 0.75f;
-        glUniform1f(uniforms.dispStrengthPx, std::max(strength, 0.0f) * scale);
+        const float factor   = mask ? std::max(mask->displacementScale, 0.0f) : 1.0f;
+        glUniform1f(uniforms.dispStrengthPx, std::max(strength, 0.0f) * factor * scale);
         glUniform1f(uniforms.dispDepthPx, std::max(depth, 1.0f) * scale);
         glUniform1f(uniforms.dispYScale, std::clamp(yScale, 0.0f, 1.0f));
     }
