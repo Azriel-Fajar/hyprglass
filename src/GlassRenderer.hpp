@@ -122,6 +122,14 @@ struct SMaskInfo {
     // a shape) leaves this at the default and sees no change at all.
     Vector2D glassBoxOffsetPx{0.0, 0.0};
     Vector2D glassBoxSizePx{-1.0, -1.0};
+
+    // mask_mode = contour layers only: the field of the outline the app draws (Contour.hpp).
+    // Zero = none, the layer draws with its rectangle as every other layer. With one, the
+    // glass shape (glassBox*) is ignored: the outline is the shape.
+    GLuint   contourTextureId = 0;
+    Vector2D contourUVScale{1.0, 1.0}; // box UV -> field UV
+    float    contourReferencePx = 0.0f; // edge_thickness is a fraction of this
+    float    contourReachPx     = 0.0f; // where the field stops
 };
 
 // Affine map from source-framebuffer pixels into the sample framebuffer.
@@ -138,11 +146,17 @@ struct SSampleMap {
 
 [[nodiscard]] SSampleMap sampleMapFor(const CBox& box, int downscale);
 
-// True when every pixel sampleBackground() would read for `box` lies inside
-// `damage`. The only coverage predicate. `box` is in post-transform framebuffer
-// pixels, not the logical space boundingBox() pads in; `damage` is in render
-// space like m_renderData.damage, and is transformed by `monitor` to match
+// True when every pixel of `box`, clipped to the framebuffer, lies inside `damage`: the
+// frame redraws all of it. The only coverage predicate; sampleRegionCovered() asks it for
+// the sample's source rectangle. `box` is in post-transform framebuffer pixels; `damage`
+// is in render space like m_renderData.damage, and is transformed by `monitor` to match
 // (a null monitor for a region already in framebuffer space, like the x-ray one).
+[[nodiscard]] bool damageCoversBox(const CBox& box, const SP<Render::IFramebuffer>& framebuffer, const CRegion& damage,
+                                   const PHLMONITOR& monitor);
+
+// True when every pixel sampleBackground() would read for `box` lies inside
+// `damage`. `box` is in post-transform framebuffer pixels, not the logical space
+// boundingBox() pads in; see damageCoversBox() for `damage`.
 [[nodiscard]] bool sampleRegionCovered(const CBox& box, const SP<Render::IFramebuffer>& source, const CRegion& damage,
                                        const PHLMONITOR& monitor);
 

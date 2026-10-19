@@ -40,6 +40,8 @@ struct SMonitorCounters {
     uint64_t xrayEvictions         = 0;
     // Frost: frosted copies rebuilt (one blit and a few blur passes each).
     uint64_t frostRebuilds          = 0;
+    // Contour: layer outline fields rebuilt (six passes at a fraction of the layer's size each).
+    uint64_t contourRebuilds        = 0;
     uint64_t blurPasses             = 0;
     double   sampledMegapixels      = 0.0;
     double   glassMegapixels        = 0.0;
@@ -69,6 +71,7 @@ void recordXrayCopy(MONITORID monitor);
 void recordXrayDeferredResample(MONITORID monitor);
 void recordXrayEvict(MONITORID monitor);
 void recordFrostRebuild(MONITORID monitor);
+void recordContourRebuild(MONITORID monitor);
 void recordBlurPasses(MONITORID monitor, uint64_t passes);
 // GL state found different from what Hyprland's tracker reports; rate-limited notification.
 void recordStateDesync(const char* what);

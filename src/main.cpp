@@ -433,6 +433,26 @@ static bool layerSkippedForLock(const PHLLS& layerSurface, bool lockscreen) {
     return aboveLock && g_pSessionLockManager && g_pSessionLockManager->isSessionLocked();
 }
 
+// Frees the contour fields of layers no longer drawn with contour, or every field with
+// `everything`.
+static void releaseContourFields(bool everything) {
+    if (!g_pGlobalState)
+        return;
+
+    const auto& config = g_pGlobalState->config;
+    const bool  layersOn = config.layersEnabled && **config.layersEnabled;
+    for (const auto& [raw, state] : g_pGlobalState->layerSurfaces) {
+        if (!state || !state->holdsContour())
+            continue;
+
+        const auto layerSurface = state->getLayerSurface();
+        const bool stale = everything || !layersOn || !layerSurface || !shouldGlassLayer(layerSurface) ||
+                           state->resolveMaskSource() != CGlassLayerSurface::EMaskSource::CONTOUR;
+        if (stale)
+            state->releaseContour();
+    }
+}
+
 static void hkRenderLayer(Render::IHyprRenderer* thisptr, PHLLS layerSurface, PHLMONITOR monitor,
                            const Time::steady_tp& now, bool popups, bool lockscreen) {
     const auto& config = g_pGlobalState->config;
@@ -470,6 +490,10 @@ static void hkRenderLayer(Render::IHyprRenderer* thisptr, PHLLS layerSurface, PH
         return !pair.second->getLayerSurface();
     });
 
+    // layers:enabled can be turned off by hyprctl keyword without a config reload: the fields go with it
+    if (g_pGlobalState->contourScratch.users > 0 && !(config.layersEnabled && **config.layersEnabled))
+        releaseContourFields(true);
+
     // Only inject glass on the main surface pass, not popups
     if (!popups && config.layersEnabled && **config.layersEnabled && shouldGlassLayer(layerSurface)) {
         // Lazy-create per-layer state, replacing stale entries whose weak ref died
@@ -484,6 +508,7 @@ static void hkRenderLayer(Render::IHyprRenderer* thisptr, PHLLS layerSurface, PH
         }
 
         if (!layerSurface->m_mapped) {
+            it->second->releaseContour();
             ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, layerSurface, monitor, now, popups, lockscreen);
             return;
         }
@@ -497,6 +522,9 @@ static void hkRenderLayer(Render::IHyprRenderer* thisptr, PHLLS layerSurface, PH
         // nothing to glass this frame (region mode without a bound region, or an
         // explicit empty region): render as Hyprland normally would
         const auto maskSource = it->second->resolveMaskSource();
+        // a layer that was drawn with contour and no longer is gives its field back
+        if (maskSource != CGlassLayerSurface::EMaskSource::CONTOUR)
+            it->second->releaseContour();
         if (maskSource == CGlassLayerSurface::EMaskSource::NONE) {
             ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, layerSurface, monitor, now, popups, lockscreen);
             return;
@@ -885,6 +913,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         parseLayerNamespaceFilters();
         commitPendingLayers(); // merge Lua layer() calls on top of string config
         validateConfig();
+        // a layer namespace or mask mode that no longer asks for contour keeps no field
+        releaseContourFields(false);
         // config values are only final here: Hyprland reloads the config after PLUGIN_INIT returns
         refreshSurfaceObserver();
         notifySubsurfaceHookFailure();

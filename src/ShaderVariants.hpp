@@ -20,6 +20,8 @@ inline constexpr GlassFeatureMask GLASS_FEATURE_LENS_EDGE = 1u << 0;
 inline constexpr GlassFeatureMask GLASS_FEATURE_FOCUS_LIGHT = 1u << 1;
 // frost > 0 and windows behind the glass: the backdrop is blurred further.
 inline constexpr GlassFeatureMask GLASS_FEATURE_FROST = 1u << 2;
+// A layer with mask_mode = contour: its edge follows a traced outline (Contour.hpp).
+inline constexpr GlassFeatureMask GLASS_FEATURE_CONTOUR = 1u << 3;
 
 struct SGlassFeatureDefine {
     GlassFeatureMask bit;
@@ -31,6 +33,7 @@ inline constexpr std::array GLASS_FEATURE_DEFINES{
     SGlassFeatureDefine{GLASS_FEATURE_LENS_EDGE, "HYPRGLASS_FEATURE_LENS_EDGE"},
     SGlassFeatureDefine{GLASS_FEATURE_FOCUS_LIGHT, "HYPRGLASS_FEATURE_FOCUS_LIGHT"},
     SGlassFeatureDefine{GLASS_FEATURE_FROST, "HYPRGLASS_FEATURE_FROST"},
+    SGlassFeatureDefine{GLASS_FEATURE_CONTOUR, "HYPRGLASS_FEATURE_CONTOUR"},
 };
 
 [[nodiscard]] consteval GlassFeatureMask allGlassFeatures() {

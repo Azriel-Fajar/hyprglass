@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Contour.hpp"
 #include "GlassRenderer.hpp"
 #include "PluginConfig.hpp"
 
@@ -14,8 +15,9 @@ class CGlassLayerSurface {
     explicit CGlassLayerSurface(PHLLS layerSurface);
     ~CGlassLayerSurface();
 
-    // Where the glass mask for this layer comes from this frame.
-    enum class EMaskSource { ALPHA_THRESHOLD, PROTOCOL_REGION, NONE };
+    // Where the glass mask for this layer comes from this frame. CONTOUR cuts like
+    // ALPHA_THRESHOLD and also traces the outline for the edge (see Contour.hpp).
+    enum class EMaskSource { ALPHA_THRESHOLD, PROTOCOL_REGION, CONTOUR, NONE };
 
     // Phase 1 (pre-surface): sample+blur background, redirect currentFB → temp FBO
     void sampleAndRedirect(PHLMONITOR monitor, float alpha, bool xray);
@@ -40,6 +42,20 @@ class CGlassLayerSurface {
     void flushDeferredResample(std::chrono::steady_clock::time_point now);
 
     [[nodiscard]] bool liveResampleEnabled() const;
+
+    // mask_mode = contour: the app committed new content, so the outline field is stale.
+    // Rebuilt on the layer's next draw, at most every Contour::MIN_REBUILD_INTERVAL.
+    void markContourContentChanged();
+
+    // The field is held, so a commit of this layer's own content matters.
+    [[nodiscard]] bool holdsContour() const { return m_contour.held(); }
+
+    // A field build is waiting: the render pass must redraw the whole layer for it.
+    [[nodiscard]] bool needsContourBuild() const { return m_contour.pending(); }
+
+    // Frees the field (and the shared build targets with the last one): the layer is no
+    // longer drawn with contour, or is gone.
+    void releaseContour() { m_contour.release(); }
 
     // Decides ALPHA_THRESHOLD vs PROTOCOL_REGION vs NONE for this layer, based on
     // mask_mode and the root surface's ext-background-effect-v1 state.
@@ -126,6 +142,15 @@ class CGlassLayerSurface {
 
     // Saved currentFB pointer, restored in compositeAndRestore
     SP<Render::IFramebuffer> m_savedCurrentFB;
+
+    // mask_mode = contour: the traced outline, rebuilt when the content changes.
+    Contour::CField m_contour;
+
+    // Brings the field up to date for this draw (a build when one is due and this frame redraws
+    // the whole layer) and points maskInfo at it. False: draw with the layer's rectangle, as every
+    // other layer does: no field yet, a stale one for another size, or contour unavailable.
+    [[nodiscard]] bool attachContour(PHLMONITOR monitor, const CBox& transformBox, float alpha, float maskThreshold,
+                                     const SResolveContext& ctx, GlassRenderer::SMaskInfo& maskInfo);
 
     [[nodiscard]] bool           resolveThemeIsDark() const;
     [[nodiscard]] std::string    resolvePresetName() const;

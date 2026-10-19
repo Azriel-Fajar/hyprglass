@@ -418,11 +418,31 @@ Where the glass goes on a layer:
 - Apps that request blur through the `ext-background-effect-v1` Wayland protocol get glass exactly where they ask for it
 - Other layers get glass wherever their content is visible (alpha above `mask_threshold`), so partially transparent content (down to ~0.004 opacity) **triggers** the glass effect
 
-`mask_mode` forces one behaviour: `auto` (default), `region` (only where the app requests blur; other layers get no glass) or `alpha` (visible content only).
+`mask_mode` forces one behaviour: `auto` (default), `region` (only where the app requests blur; other layers get no glass), `alpha` (visible content only) or `contour` (visible content, with the edge following the shapes the app draws, see below).
 
 **Caveat:** Layer shadows count as visible content. Use `mask_threshold` to set an alpha cutoff higher than your shadow opacity. Set it once for every layer with `layers:mask_threshold`; a per-layer value wins.
 
 **Soft edges:** `mask_feather` fades the glass in over that much alpha above `mask_threshold`, so antialiased rounded corners blend instead of stepping. Content fainter than `mask_threshold + mask_feather` then gets lighter glass: keep `0` (default) for near-transparent bars. Only applies where glass follows visible content, not to the region an app requests.
+
+**Contour:** with `mask_mode = contour` every shape the app draws gets its own edge, bend and highlights, instead of the layer's rectangle getting them: a stack of notifications, a card in a full-screen overlay, a floating pill. The glass goes where the content is visible, like `alpha`, so `mask_threshold` is the cutoff of the outline: set it above the opacity of the app's shadows (`0.1` to `0.3`) so a shadow does not count as part of the shape. A full-width bar looks the same as with `alpha`.
+
+```ini
+plugin:hyprglass {
+    layers {
+        enabled = 1
+        mask_threshold = 0.15
+        namespace_mask_modes = swaync=contour, quickshell:notifications=contour
+    }
+}
+```
+
+- `edge_thickness` is a fraction of the layer's shorter side, at most 160 px, here (a card in a screen-sized layer gets a card's edge); `edge_thickness_px` sets an exact width
+- `mask_feather` still softens the cut. `shape`, `refraction_flow` and `lens_distortion` do not apply
+- The outline follows the app when it redraws, at most 30 times a second
+- A layer behind an opaque window keeps the `alpha` look until it has been redrawn in full once
+- A GPU that cannot render it falls back to `alpha`, with a notification
+
+**Cost:** none for layers that do not use it. For a layer that does, one extra texture read per glass pixel, and a few short GPU passes and a few MB of memory while a contour layer exists (shared work buffers included), freed when the last one closes or stops using `contour`. `hyprctl hyprglass stats` counts the rebuilds (`contour_build`).
 
 **Fixed shape:** `shape` gives a layer's glass its own rounded box, so a floating bar or a card inside a larger layer gets its own edge, bend and highlights instead of those of the whole layer. `inset` trims the layer's edges (one value, or top, right, bottom, left) and `radius` rounds the corners, `-1` for a pill; both in logical px (up to 16384), and a negative inset reaches past that edge. Content outside the shape is still drawn, without glass. Inside it, `mask_mode` still decides where the glass goes: set the layer's `mask_threshold` to `0` to fill the whole shape.
 
@@ -446,6 +466,7 @@ hg.layer("waybar", { preset = "subtle", mask_threshold = 0.05, live_resample = f
 hg.layer("swaync")
 hg.layer("quickshell:bezel", { preset = "ui", mask_threshold = 0.3 })
 hg.layer("quickshell:bar", { mask_mode = "region" })
+hg.layer("quickshell:notifications", { mask_mode = "contour", mask_threshold = 0.15 })
 hg.layer("dock", { mask_feather = 0.45 })
 hg.layer("eww-bar", { shape = { inset = 6, radius = -1 } })                     -- pill, 6 px inside the layer
 hg.layer("quickshell:card", { shape = { inset = { 24, 0, 24, 0 }, radius = 16 } }) -- top, right, bottom, left
@@ -457,7 +478,7 @@ hg.layer("debug-panel", { exclude = true })
 | `preset` | string | Preset override for this layer |
 | `mask_threshold` | float | Per-layer override of `layers:mask_threshold` |
 | `live_resample` | bool | Per-layer override of `layers:live_resample` |
-| `mask_mode` | string | `"auto"`, `"region"` or `"alpha"`. See `layers:mask_mode` |
+| `mask_mode` | string | `"auto"`, `"region"`, `"alpha"` or `"contour"`. See `layers:mask_mode` |
 | `mask_feather` | float | Per-layer override of `layers:mask_feather` |
 | `shape` | table | Fixed glass shape: `{ inset = px or { top, right, bottom, left }, radius = px }`, both optional (`0`); `radius = -1` = pill. See `layers:namespace_shapes` |
 | `exclude` | bool | Blacklist this namespace instead of whitelisting it |
@@ -477,7 +498,7 @@ hg.layer("debug-panel", { exclude = true })
 | `layers:live_resample` | bool | `true` (`1` in .conf) | Re-render layer glass when content behind it changes (e.g. a playing video). GPU cost scales with background activity; static scenes stay free. Overridable per layer |
 | `layers:live_resample_fps` | int | `30` | Max re-renders per second per layer for live resample. `0` = uncapped |
 | `layers:force_live_resample` | bool | `false` (`0` in .conf) | Experimental: re-render layer glass every frame regardless of changes, ignoring `live_resample_fps`. Heavy GPU/battery cost |
-| `layers:mask_mode` | string | `auto` | Where the glass goes: `auto` = where the app requests blur, else where content is visible; `region` = only where the app requests blur; `alpha` = only where content is visible |
+| `layers:mask_mode` | string | `auto` | Where the glass goes: `auto` = where the app requests blur, else where content is visible; `region` = only where the app requests blur; `alpha` = only where content is visible; `contour` = where content is visible, with the edge following each shape the app draws |
 | `layers:namespace_mask_modes` | string | `""` | Per-namespace `mask_mode` (`ns=mode` pairs, comma-separated) |
 | `layers:mask_feather` | float | `0` | Soft edges: glass fades in over this much alpha above `mask_threshold` (e.g. `0.45` for a rounded dock). `0` = hard edge. Ignored where the app requests a blur region |
 | `layers:namespace_mask_feathers` | string | `""` | Per-namespace `mask_feather` (`ns=value` pairs, comma-separated) |
@@ -720,8 +741,8 @@ hyprctl -j hyprglass stats       # same, as JSON
 hyprglass stats
   stage timers: off (plugin:hyprglass:debug:timers = 0)
 
-  monitor        frames  win_draws  opaque_skip  win_hit  win_miss  win_defer  win_disc  layer_draws  layer_hit  layer_miss  layer_defer  sub_draws  sub_hit  sub_miss  sub_defer  xray_copy  xray_defer  xray_evict  blur_pass  sampled_mpx  glass_mpx  frost_build
-  eDP-1            7212       3401         5122     3120       240         41         0         1560       1420          92            3        410      380        22          8          0           0           0       5520        41.30      18.77            0
+  monitor        frames  win_draws  opaque_skip  win_hit  win_miss  win_defer  win_disc  layer_draws  layer_hit  layer_miss  layer_defer  sub_draws  sub_hit  sub_miss  sub_defer  xray_copy  xray_defer  xray_evict  blur_pass  sampled_mpx  glass_mpx  frost_build  contour_build
+  eDP-1            7212       3401         5122     3120       240         41         0         1560       1420          92            3        410      380        22          8          0           0           0       5520        41.30      18.77            0              0
   eDP-1          per frame: 0.47 win draws, 0.22 layer draws, 0.06 sub draws, 0.77 blur passes, 0.006 sampled mpx, 0.003 glass mpx
 ```
 
