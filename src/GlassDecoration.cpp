@@ -85,6 +85,17 @@ static float focusLightFor(const SResolveContext& ctx) {
     return value > 0.0f ? std::min(value, 1.0f) : 0.0f;
 }
 
+// Not std::clamp: a NaN must read as off, not reach the shader.
+static float frostFor(const SResolveContext& ctx) {
+    const float value = resolvePresetFloat(ctx, &SPresetValues::frost, &SOverridableConfig::frost, GlobalDefaults::FROST);
+    return value > 0.0f ? std::min(value, 1.0f) : 0.0f;
+}
+
+static float frostBlurFor(const SResolveContext& ctx) {
+    const float value = resolvePresetFloat(ctx, &SPresetValues::frostBlur, &SOverridableConfig::frostBlur, GlobalDefaults::FROST_BLUR);
+    return value > 0.0f ? std::min(value, Frost::BLUR_MAX) : 0.0f;
+}
+
 static constexpr std::chrono::milliseconds FOCUS_LIGHT_FADE{200};
 
 // Hyprland's animations:enabled; a key that cannot be read counts as on.
@@ -109,13 +120,20 @@ float CGlassDecoration::focusLightLevel(std::chrono::steady_clock::time_point no
 
 // The light lies inside the glass box: damaging the window box is enough, and
 // unlike damageEntire() leaves the sampling margin around it alone.
-void CGlassDecoration::damageFocusLight() {
-    const auto window = m_window.lock();
+static void damageGlassBox(const PHLWINDOW& window) {
     if (!window)
         return;
 
     if (const auto box = WindowGeometry::computePaddedGlobalBox(window, 0.0f))
         g_pHyprRenderer->damageBox(*box);
+}
+
+void CGlassDecoration::damageFocusLight() {
+    damageGlassBox(m_window.lock());
+}
+
+void CGlassDecoration::damageFrost() {
+    damageGlassBox(m_window.lock());
 }
 
 void CGlassDecoration::onActiveWindowChanged(const PHLWINDOW& activeWindow) {
@@ -294,6 +312,10 @@ void CGlassDecoration::draw(PHLMONITOR monitor, float const& alpha) {
             if (m_lastFocusLightStrength > 0.0f)
                 Hash::hashCombine(fingerprint.runningHash, m_focusLightFadingAtDraw ? 2 : static_cast<int>(m_focusLightTarget));
 
+            // Same for frost: glass stacked above resamples where the ease starts and where it ends.
+            if (m_frost.moving() || m_frost.amount() > 0.0f)
+                Hash::hashCombine(fingerprint.runningHash, m_frost.moving() ? 2 : 1);
+
             m_lastFoldedFrameSerial = g_pGlobalState->frameSerial;
         }
     }
@@ -307,6 +329,7 @@ void CGlassDecoration::draw(PHLMONITOR monitor, float const& alpha) {
     if (!enabled) {
         m_lastSelfSample         = 0.0f;
         m_lastFocusLightStrength = 0.0f;
+        m_frost.reset();
 
         // Only count a skip that resolveEnabled() itself attributes to
         // skip_opaque_windows — a tag or global-disable skip doesn't have a
@@ -565,6 +588,8 @@ void CGlassDecoration::renderPass(PHLMONITOR monitor, const float& alpha, bool x
 
             GlassRenderer::blurBackground(m_sampleFramebuffer, blurRadius, blurIterations, source);
 
+            m_frost.sampleChanged();
+
             m_hasCachedSample       = true;
             m_cachedFromSnapshot    = xray;
             m_lastSceneGeneration   = g_pGlobalState->getSceneGeneration(monitor);
@@ -591,10 +616,57 @@ void CGlassDecoration::renderPass(PHLMONITOR monitor, const float& alpha, bool x
         }
     }
 
+    // Frost: blurred further where windows lie behind, clear over the wallpaper. X-ray
+    // shows no window behind the glass, and a fullscreen window has nothing behind it.
+    GlassRenderer::SFrostInput frostInput;
+    const float                frostSetting = (xray || fsUnrounded) ? 0.0f : frostFor(ctx);
+    if (frostSetting > 0.0f || m_frost.active()) {
+        const float target =
+            frostSetting > 0.0f ? frostSetting * Frost::amountForCoverage(Frost::coveredFraction(window, monitor, windowBox)) : 0.0f;
+
+        // A window spanning two monitors gets a different target on each: it snaps on a
+        // monitor change, or it would ease between them and never settle.
+        const bool sameMonitor = m_frostMonitor == monitorId;
+        m_frostMonitor         = monitorId;
+
+        // damage, not a loop: it stops once the amount settles. The sample is unchanged,
+        // so no resample is owed and the cache stays valid.
+        if (m_frost.step(target, sameMonitor && hyprlandAnimationsEnabled(), std::chrono::steady_clock::now()))
+            damageFrost();
+
+        if (m_frost.amount() > Frost::MINIMUM_AMOUNT) {
+            const float blurStrength = resolvePresetFloat(ctx, &SPresetValues::blurStrength, &SOverridableConfig::blurStrength);
+            const int   downscale    = blurStrength >= GlassRenderer::BLUR_DOWNSCALE_THRESHOLD ? GlassRenderer::BLUR_DOWNSCALE_MAX : 1;
+            // the copy is half the sample's size on top of the sample's own downscale
+            const float radius = frostBlurFor(ctx) * 12.0f / (2.0f * downscale);
+
+            if (m_frost.needsBuild(m_sampleFramebuffer, radius)) {
+                float frostRadius     = radius;
+                int   frostIterations = Frost::BLUR_ITERATIONS;
+                if (ctx.config.blurFold && **ctx.config.blurFold) {
+                    const GlassRenderer::SFoldedBlur folded = GlassRenderer::foldBlurPasses(frostRadius, frostIterations);
+                    frostRadius     = folded.radius;
+                    frostIterations = folded.iterations;
+                }
+
+                if (GlassRenderer::buildFrostCopy(m_sampleFramebuffer, m_frost.copy(), m_frost.temporary(), frostRadius, frostIterations, source)) {
+                    m_frost.built(radius);
+                    Diagnostics::recordFrostRebuild(monitorId);
+                }
+            }
+
+            if (!m_frost.needsBuild(m_sampleFramebuffer, radius))
+                frostInput = {m_frost.copy(), m_frost.amount()};
+        } else {
+            m_frost.releaseCopy();
+        }
+    }
+
     GlassRenderer::applyGlassEffect(m_sampleFramebuffer, source,
                                      windowBox, transformBox, glassAlpha,
                                      std::array<float, 4>{cornerRadius, cornerRadius, cornerRadius, cornerRadius},
-                                     roundingPower, m_samplePaddingRatio, ctx, nullptr, focusLight);
+                                     roundingPower, m_samplePaddingRatio, ctx, nullptr, focusLight,
+                                     frostInput.copy ? &frostInput : nullptr);
 }
 
 eDecorationType CGlassDecoration::getDecorationType() {

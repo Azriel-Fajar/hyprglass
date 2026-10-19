@@ -18,6 +18,8 @@ inline constexpr GlassFeatureMask GLASS_FEATURE_NONE = 0;
 inline constexpr GlassFeatureMask GLASS_FEATURE_LENS_EDGE = 1u << 0;
 // focus_light > 0 on the active window: a light along its glass edge.
 inline constexpr GlassFeatureMask GLASS_FEATURE_FOCUS_LIGHT = 1u << 1;
+// frost > 0 and windows behind the glass: the backdrop is blurred further.
+inline constexpr GlassFeatureMask GLASS_FEATURE_FROST = 1u << 2;
 
 struct SGlassFeatureDefine {
     GlassFeatureMask bit;
@@ -28,6 +30,7 @@ struct SGlassFeatureDefine {
 inline constexpr std::array GLASS_FEATURE_DEFINES{
     SGlassFeatureDefine{GLASS_FEATURE_LENS_EDGE, "HYPRGLASS_FEATURE_LENS_EDGE"},
     SGlassFeatureDefine{GLASS_FEATURE_FOCUS_LIGHT, "HYPRGLASS_FEATURE_FOCUS_LIGHT"},
+    SGlassFeatureDefine{GLASS_FEATURE_FROST, "HYPRGLASS_FEATURE_FROST"},
 };
 
 [[nodiscard]] consteval GlassFeatureMask allGlassFeatures() {

@@ -1,6 +1,7 @@
 #include "GlassRenderer.hpp"
 #include "BuiltInPresets.hpp"
 #include "Diagnostics.hpp"
+#include "Frost.hpp"
 #include "Globals.hpp"
 
 #include <algorithm>
@@ -338,7 +339,7 @@ void blendOwnContent(SP<Render::IFramebuffer>& sampleFramebuffer, PHLWINDOW wind
 }
 
 void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, int iterations,
-                    SP<Render::IFramebuffer> callerFramebuffer) {
+                    SP<Render::IFramebuffer> callerFramebuffer, SP<Render::IFramebuffer>* temporaryFramebuffer) {
     auto& shaderManager = g_pGlobalState->shaderManager;
     if (!sampleFramebuffer || !callerFramebuffer || radius <= 0.0f || iterations <= 0 || !shaderManager.isInitialized())
         return;
@@ -352,13 +353,17 @@ void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, in
     int width  = static_cast<int>(sampleFramebuffer->m_size.x);
     int height = static_cast<int>(sampleFramebuffer->m_size.y);
 
-    auto& blurTempFramebuffer = g_pGlobalState->blurTempFramebuffer;
+    auto& blurTempFramebuffer = temporaryFramebuffer ? *temporaryFramebuffer : g_pGlobalState->blurTempFramebuffer;
     if (!blurTempFramebuffer)
         blurTempFramebuffer = g_pHyprRenderer->createFB("hyprglass-blur-temp");
 
     if (blurTempFramebuffer->m_size.x != width || blurTempFramebuffer->m_size.y != height ||
         blurTempFramebuffer->m_drmFormat != sampleFramebuffer->m_drmFormat)
         blurTempFramebuffer->alloc(width, height, sampleFramebuffer->m_drmFormat);
+
+    // An allocation that failed (out of GPU memory) leaves no texture to ping-pong through.
+    if (!blurTempFramebuffer->isAllocated() || !blurTempFramebuffer->getTexture() || !sampleFramebuffer->getTexture())
+        return;
 
     // Fullscreen quad projection: maps VAO positions [0,1] to clip space [-1,1]
     static constexpr std::array<float, 9> FULLSCREEN_PROJECTION = {
@@ -416,23 +421,68 @@ void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, in
         static_cast<int>(callerFramebuffer->m_size.y));
 }
 
+bool buildFrostCopy(const SP<Render::IFramebuffer>& sample, SP<Render::IFramebuffer>& copy, SP<Render::IFramebuffer>& temporary,
+                    float radius, int iterations, const SP<Render::IFramebuffer>& callerFramebuffer) {
+    if (!sample || !callerFramebuffer || !g_pGlobalState->shaderManager.isInitialized())
+        return false;
+
+    const int sampleWidth  = static_cast<int>(sample->m_size.x);
+    const int sampleHeight = static_cast<int>(sample->m_size.y);
+    const int width        = std::max(1, sampleWidth / 2);
+    const int height       = std::max(1, sampleHeight / 2);
+    if (sampleWidth < 1 || sampleHeight < 1)
+        return false;
+
+    if (!copy)
+        copy = g_pHyprRenderer->createFB("hyprglass-frost");
+    if (copy->m_size.x != width || copy->m_size.y != height || copy->m_drmFormat != sample->m_drmFormat)
+        copy->alloc(width, height, sample->m_drmFormat);
+
+    // Dropped, so the caller sees a missing copy and retries rather than drawing a texture-less one.
+    if (!copy->isAllocated() || !copy->getTexture()) {
+        copy.reset();
+        return false;
+    }
+
+    // same as the sample blit: the render pass's damage scissor would clip it
+    g_pHyprOpenGL->setCapStatus(GL_SCISSOR_TEST, false);
+    if (glIsEnabled(GL_SCISSOR_TEST)) {
+        glDisable(GL_SCISSOR_TEST);
+        Diagnostics::recordStateDesync("scissor on before the frost blit");
+    }
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbId(sample));
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbId(copy));
+    glBlitFramebuffer(0, 0, sampleWidth, sampleHeight, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+
+    blurBackground(copy, radius, iterations, callerFramebuffer, &temporary);
+
+    // blurBackground() returns without binding when it has nothing to blur
+    glBindFramebuffer(GL_FRAMEBUFFER, fbId(callerFramebuffer));
+    return true;
+}
+
 // The optional effects (ShaderVariants.hpp) this draw's resolved settings turn on.
 // Must stay GLASS_FEATURE_NONE whenever every effect is at its off value, so the
 // draw runs the default program.
-static GlassFeatureMask glassFeaturesFor(float edgeHeight, float focusLight) {
+static GlassFeatureMask glassFeaturesFor(float edgeHeight, float focusLight, bool frost) {
     GlassFeatureMask features = GLASS_FEATURE_NONE;
     if (edgeHeight > 0.0f)
         features |= GLASS_FEATURE_LENS_EDGE;
     if (focusLight > 0.0f)
         features |= GLASS_FEATURE_FOCUS_LIGHT;
+    if (frost)
+        features |= GLASS_FEATURE_FROST;
     return features;
 }
+
+static constexpr int FROST_TEXTURE_UNIT = 2; // 0 is the sample, 1 the layer surface mask
 
 void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFramebuffer> targetFramebuffer,
                        CBox& rawBox, CBox& transformedBox,
                        float alpha, const std::array<float, 4>& radii, float roundingPower,
                        const Vector2D& paddingRatio, const SResolveContext& resolveContext,
-                       const SMaskInfo* mask, float focusLight) {
+                       const SMaskInfo* mask, float focusLight, const SFrostInput* frost) {
     if (!sampleFramebuffer || !targetFramebuffer)
         return;
 
@@ -445,7 +495,9 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
         std::min(resolvePresetFloat(resolveContext, &SPresetValues::edgeHeight, &SOverridableConfig::edgeHeight), EDGE_HEIGHT_MAX);
     // windows only: a masked draw is a layer or an item
     const float focusLightValue = !mask && focusLight > 0.0f ? std::min(focusLight, 1.0f) : 0.0f;
-    const auto  features        = glassFeaturesFor(edgeHeightValue, focusLightValue);
+    // windows only, like the light
+    const bool  frosted         = !mask && frost && frost->copy && frost->copy->getTexture() && frost->amount > Frost::MINIMUM_AMOUNT;
+    const auto  features        = glassFeaturesFor(edgeHeightValue, focusLightValue, frosted);
 
     // Before any GL binding: a variant's first use compiles it, which rebinds the VAO and array buffer.
     const auto& program  = g_pGlobalState->shaderManager.glassProgram(features);
@@ -462,6 +514,12 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     glBindFramebuffer(GL_FRAMEBUFFER, fbId(targetFramebuffer));
     glActiveTexture(GL_TEXTURE0);
     texture->bind();
+
+    if (frosted) {
+        glActiveTexture(GL_TEXTURE0 + FROST_TEXTURE_UNIT);
+        frost->copy->getTexture()->bind();
+        glActiveTexture(GL_TEXTURE0);
+    }
 
     // Layers only: bind the temp FBO texture (rendered surface) on texture unit 1.
     // The shader samples it to mask glass to visible content and composite surface on top.
@@ -561,6 +619,11 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
             static_cast<float>((focusLightColorValue >> 8) & 0xFF) / 255.0f);
         glUniform1f(uniforms.focusLightColorAlpha,
             static_cast<float>(focusLightColorValue & 0xFF) / 255.0f);
+    }
+
+    if (features & GLASS_FEATURE_FROST) {
+        glUniform1i(uniforms.frostTex, FROST_TEXTURE_UNIT);
+        glUniform1f(uniforms.frostAmount, std::min(frost->amount, 1.0f));
     }
 
     uploadThemeUniforms(resolveContext, program);

@@ -72,6 +72,10 @@ struct SGlassUniforms {
     GLint focusLight = -1;
     GLint focusLightColor = -1;
     GLint focusLightColorAlpha = -1;
+
+    // GLASS_FEATURE_FROST variant only.
+    GLint frostTex    = -1;
+    GLint frostAmount = -1;
 };
 
 struct SBlurUniforms {

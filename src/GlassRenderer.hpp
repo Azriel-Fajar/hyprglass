@@ -158,8 +158,22 @@ void blendOwnContent(SP<Render::IFramebuffer>& sampleFramebuffer, PHLWINDOW wind
 // callerFramebuffer is re-bound after the blur ping-pong; the viewport is
 // restored from its size so it always matches the re-bound framebuffer
 // (monitor fields would be wrong on 90°/270° transformed monitors).
+// temporaryFramebuffer: the ping-pong target; null uses the one every glass shares. A caller blurring
+// at another size than the rest passes its own, so the shared one is not reallocated back and forth.
 void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, int iterations,
-                    SP<Render::IFramebuffer> callerFramebuffer);
+                    SP<Render::IFramebuffer> callerFramebuffer, SP<Render::IFramebuffer>* temporaryFramebuffer = nullptr);
+
+// The frosted copy of a window's sample (see Frost.hpp): the sample at half its size, blurred
+// further by radius (in that smaller framebuffer's pixels). `copy` and `temporary` are the caller's,
+// allocated here and reused while the size holds. callerFramebuffer is left bound, as blurBackground() does.
+bool buildFrostCopy(const SP<Render::IFramebuffer>& sample, SP<Render::IFramebuffer>& copy, SP<Render::IFramebuffer>& temporary,
+                    float radius, int iterations, const SP<Render::IFramebuffer>& callerFramebuffer);
+
+// What a window's glass draw needs for frost: the frosted copy and how much of it shows (0..1).
+struct SFrostInput {
+    SP<Render::IFramebuffer> copy;
+    float                    amount = 0.0f;
+};
 
 // When mask is non-null (layers only), the shader composites the surface content
 // over the glass effect in a single pass. When mask is null (windows), the shader
@@ -172,10 +186,12 @@ void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, in
 //
 // focusLight: brightness of the light along the edge, 0..1 (focus_light times
 // its fade). Only the active window's glass passes one above 0.
+//
+// frost: windows only, null when the glass is not frosted right now (see SFrostInput).
 void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFramebuffer> targetFramebuffer,
                        CBox& rawBox, CBox& transformedBox,
                        float alpha, const std::array<float, 4>& radii, float roundingPower,
                        const Vector2D& paddingRatio, const SResolveContext& resolveContext,
-                       const SMaskInfo* mask = nullptr, float focusLight = 0.0f);
+                       const SMaskInfo* mask = nullptr, float focusLight = 0.0f, const SFrostInput* frost = nullptr);
 
 } // namespace GlassRenderer

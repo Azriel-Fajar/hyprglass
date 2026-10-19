@@ -125,6 +125,8 @@ inline constexpr auto SELF_SAMPLE           = "plugin:hyprglass:self_sample";
 inline constexpr auto XRAY                  = "plugin:hyprglass:xray";
 inline constexpr auto FOCUS_LIGHT           = "plugin:hyprglass:focus_light";
 inline constexpr auto FOCUS_LIGHT_COLOR     = "plugin:hyprglass:focus_light_color";
+inline constexpr auto FROST                 = "plugin:hyprglass:frost";
+inline constexpr auto FROST_BLUR            = "plugin:hyprglass:frost_blur";
 
 // Layer surface support
 inline constexpr auto LAYERS_ENABLED            = "plugin:hyprglass:layers:enabled";
@@ -199,6 +201,8 @@ inline constexpr auto DARK_SELF_SAMPLE          = "plugin:hyprglass:dark:self_sa
 inline constexpr auto DARK_XRAY                 = "plugin:hyprglass:dark:xray";
 inline constexpr auto DARK_FOCUS_LIGHT          = "plugin:hyprglass:dark:focus_light";
 inline constexpr auto DARK_FOCUS_LIGHT_COLOR    = "plugin:hyprglass:dark:focus_light_color";
+inline constexpr auto DARK_FROST                = "plugin:hyprglass:dark:frost";
+inline constexpr auto DARK_FROST_BLUR           = "plugin:hyprglass:dark:frost_blur";
 
 // Overridable — light theme overrides
 inline constexpr auto LIGHT_BLUR_STRENGTH        = "plugin:hyprglass:light:blur_strength";
@@ -237,6 +241,8 @@ inline constexpr auto LIGHT_SELF_SAMPLE          = "plugin:hyprglass:light:self_
 inline constexpr auto LIGHT_XRAY                 = "plugin:hyprglass:light:xray";
 inline constexpr auto LIGHT_FOCUS_LIGHT          = "plugin:hyprglass:light:focus_light";
 inline constexpr auto LIGHT_FOCUS_LIGHT_COLOR    = "plugin:hyprglass:light:focus_light_color";
+inline constexpr auto LIGHT_FROST               = "plugin:hyprglass:light:frost";
+inline constexpr auto LIGHT_FROST_BLUR          = "plugin:hyprglass:light:frost_blur";
 
 } // namespace ConfigKeys
 
@@ -278,6 +284,8 @@ struct SOverridableConfig {
     Hyprlang::INT* const*   xray                = nullptr;
     Hyprlang::FLOAT* const* focusLight          = nullptr;
     Hyprlang::INT* const*   focusLightColor     = nullptr;
+    Hyprlang::FLOAT* const* frost               = nullptr;
+    Hyprlang::FLOAT* const* frostBlur           = nullptr;
 };
 
 // Plain values for a user-defined preset layer (all sentinel = not set → inherit)
@@ -318,6 +326,8 @@ struct SPresetValues {
     int64_t xray               = SENTINEL_INT;
     float   focusLight         = static_cast<float>(SENTINEL_FLOAT);
     int64_t focusLightColor    = SENTINEL_INT;
+    float   frost              = static_cast<float>(SENTINEL_FLOAT);
+    float   frostBlur          = static_cast<float>(SENTINEL_FLOAT);
 };
 
 struct SCustomPreset {

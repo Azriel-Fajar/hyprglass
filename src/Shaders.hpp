@@ -130,6 +130,14 @@ const float FOCUS_LIGHT_FLOOR = 0.5;       // the side facing away from bevel_an
 const float FOCUS_LIGHT_REACH = 24.0;      // deeper, the light is under a third of a colour step: skipped
 #endif
 
+#ifdef HYPRGLASS_FEATURE_FROST
+uniform sampler2D frostTex;  // tex blurred further, at half its size: same UVs as tex
+uniform float frostAmount;   // frost times its ease, > 0
+
+const float FROST_SATURATION_LIFT = 0.35; // frosted glass reads slightly more colourful ...
+const float FROST_DIM = 0.10;             // ... and slightly deeper, at full amount
+#endif
+
 in vec2 v_texcoord;
 layout(location = 0) out vec4 fragColor;
 
@@ -149,7 +157,12 @@ vec2 toTexUV(vec2 wuv) {
 
 vec4 sampleBlurred(vec2 wuv) {
     vec2 tuv = toTexUV(toSampleBoxUV(wuv));
+#ifdef HYPRGLASS_FEATURE_FROST
+    tuv = clamp(tuv, 0.001, 0.999);
+    return mix(texture(tex, tuv), texture(frostTex, tuv), frostAmount);
+#else
     return texture(tex, clamp(tuv, 0.001, 0.999));
+#endif
 }
 
 // hash12 from "Hash without Sine" (Dave Hoskins), tuned for integer pixel coordinates
@@ -508,6 +521,15 @@ void main() {
     } else {
         color = sampleBlurred(uvG).rgb;
     }
+
+#ifdef HYPRGLASS_FEATURE_FROST
+    // Frosted glass (frost): the backdrop was blurred further above; it also gets
+    // a little more colour and depth, before the theme's tone mapping below.
+    {
+        float frostLum = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        color = max(mix(vec3(frostLum), color, 1.0 + FROST_SATURATION_LIFT * frostAmount), 0.0) * (1.0 - FROST_DIM * frostAmount);
+    }
+#endif
 
     // ========================================
     // FROSTED TINT (per-theme tone mapping)
