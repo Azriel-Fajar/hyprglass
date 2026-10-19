@@ -339,6 +339,22 @@ static void parseLayerNamespaceFilters() {
     parseKeyValuePairs(config.layersNamespaceMaskFeathers, '=', [&](const std::string& ns, const std::string& val) {
         try { g_pGlobalState->layerNamespaceMaskFeathers.emplace(ns, std::stof(val)); } catch (...) {}
     });
+
+    g_pGlobalState->layerNamespaceShapes.clear();
+    std::string invalidShapes;
+    parseKeyValuePairs(config.layersNamespaceShapes, '=', [&](const std::string& ns, const std::string& val) {
+        if (const auto shape = parseLayerShape(val))
+            g_pGlobalState->layerNamespaceShapes[ns] = *shape;
+        else
+            invalidShapes += (invalidShapes.empty() ? "" : ", ") + ns + "=" + val;
+    });
+    if (!invalidShapes.empty()) {
+        HyprlandAPI::addNotificationV2(PHANDLE, {
+            {"text", "[hyprglass] Ignoring layers:namespace_shapes " + invalidShapes + ": expected ns=inset:radius or ns=top:right:bottom:left:radius."},
+            {"time", (uint64_t)5000},
+            {"color", CHyprColor{1.0, 0.8, 0.2, 1.0}},
+        });
+    }
 }
 
 static bool shouldGlassLayer(PHLLS layerSurface) {

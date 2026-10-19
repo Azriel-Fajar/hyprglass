@@ -42,6 +42,20 @@ enum class ELayerMaskMode { AUTO, ALPHA, REGION };
 // Parses "auto"/"alpha"/"region"; nullopt for anything else.
 [[nodiscard]] std::optional<ELayerMaskMode> parseLayerMaskMode(std::string_view value);
 
+// Fixed glass shape of a layer namespace: the layer box inset per side and
+// rounded by one corner radius, both in logical px. A negative inset reaches
+// past that layer edge, a negative radius makes a capsule.
+struct SLayerShape {
+    float insetTop    = 0.0f;
+    float insetRight  = 0.0f;
+    float insetBottom = 0.0f;
+    float insetLeft   = 0.0f;
+    float radius      = 0.0f;
+};
+
+// Parses "inset:radius" or "top:right:bottom:left:radius"; nullopt for anything else.
+[[nodiscard]] std::optional<SLayerShape> parseLayerShape(std::string_view value);
+
 // Instrumentation mode (plugin:hyprglass:debug:mode). Isolates the render-pass
 // cost from the GL pipeline cost for A/B measurement: hints_only skips all GL
 // work in the pass elements while keeping their boundingBox/needsLiveBlur/
@@ -129,6 +143,7 @@ inline constexpr auto LAYERS_NAMESPACE_MASK_MODES       = "plugin:hyprglass:laye
 // Alpha mask only: alpha range above mask_threshold over which layer glass fades in; 0 keeps the hard mask.
 inline constexpr auto LAYERS_MASK_FEATHER               = "plugin:hyprglass:layers:mask_feather";
 inline constexpr auto LAYERS_NAMESPACE_MASK_FEATHERS    = "plugin:hyprglass:layers:namespace_mask_feathers";
+inline constexpr auto LAYERS_NAMESPACE_SHAPES           = "plugin:hyprglass:layers:namespace_shapes";
 inline constexpr auto LAYERS_MANAGE_BLUR                = "plugin:hyprglass:layers:manage_blur";
 
 // Subsurface item glass support (see GlassSubsurfaceState).
@@ -395,6 +410,7 @@ struct SPluginConfig {
     StringConfigPtr       layersNamespaceMaskModes;
     Hyprlang::FLOAT* const* layersMaskFeather            = nullptr;
     StringConfigPtr       layersNamespaceMaskFeathers;
+    StringConfigPtr       layersNamespaceShapes;
     Hyprlang::INT* const* layersManageBlur               = nullptr;
 
     Hyprlang::INT* const*   subsurfacesEnabled = nullptr;

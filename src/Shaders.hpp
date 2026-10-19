@@ -84,9 +84,9 @@ uniform vec4 regionRects[64];  // box-local pixels: xy = offset from box top-lef
 
 // The glass shape: the outline, bezel, lens, refraction centre and lighting
 // all follow this sub-rect of the drawn box. Smaller than the drawn box only
-// for subsurface items (e.g. a capsule pill inside a wider hit-test area).
-// Box-local pixels, same space as regionRects. Windows and alpha-mask layers
-// pass offset (0,0) and size == fullSize.
+// for subsurface items (e.g. a capsule pill inside a wider hit-test area) and
+// layers with a fixed shape. Box-local pixels, same space as regionRects.
+// Windows and other layers pass offset (0,0) and size == fullSize.
 uniform vec2 glassBoxOffsetPx;
 uniform vec2 glassBoxSizePx;
 // glassUV = uv * glassUVScale - glassUVOffset: 0..1 across the glass box.
@@ -356,10 +356,10 @@ void main() {
     float cornerSdf    = getCornerSDF(uv);
     float cornerAlpha  = 1.0 - smoothstep(-1.5, 0.5, cornerSdf);
 
-    if (maskMode == 1) {
-        // Subsurface items: the glass box (glassBoxOffsetPx/SizePx) can be
-        // smaller than the item's own drawn box/region — e.g. a capsule glass
-        // shape inside a rectangular blur region. Outside it, fall back to the
+    if (hasMask) {
+        // Layers and subsurface items: the glass box (glassBoxOffsetPx/SizePx) can be
+        // smaller than the drawn box/region — e.g. a capsule glass shape inside a
+        // rectangular blur region, or a layer's fixed shape. Outside it, fall back to the
         // plain surface pixel instead of dropping it (a hard discard here would
         // silently delete client content, like an icon, that simply isn't under
         // the glass). cornerAlpha fades smoothly across the boundary (the same
@@ -371,8 +371,7 @@ void main() {
             return;
         }
     } else {
-        // Windows, and alpha-mask layers: no surface pixel to fall back to
-        // outside the glass shape, so this is exactly the old hard-edged cutoff.
+        // Windows: no surface pixel to fall back to outside the glass shape.
         if (cornerSdf > 0.0) discard;
         if (cornerAlpha < 0.001) discard;
     }
@@ -387,7 +386,7 @@ void main() {
     // EDGE PROXIMITY + DIRECTION
     // edgeProximity: 1.0 at boundary, exponential decay inward
     // inwardDir: pixel-space direction toward center (smooth everywhere)
-    // Clamped to 1.0: cornerSdf can be positive here (maskMode==1's glass box
+    // Clamped to 1.0: cornerSdf can be positive here (a layer or item glass box
     // can be smaller than fullSize, so fragments just outside it still reach
     // this code with cornerAlpha > 0.001), and exp() of a positive value would
     // otherwise overshoot every effect that scales off edgeProximity.

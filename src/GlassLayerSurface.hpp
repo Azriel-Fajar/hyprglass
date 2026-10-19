@@ -130,4 +130,6 @@ class CGlassLayerSurface {
     [[nodiscard]] bool           resolveThemeIsDark() const;
     [[nodiscard]] std::string    resolvePresetName() const;
     [[nodiscard]] ELayerMaskMode resolveMaskMode() const;
+    // layers:namespace_shapes entry for this layer; nullopt = the whole layer box
+    [[nodiscard]] std::optional<SLayerShape> resolveShape() const;
 };

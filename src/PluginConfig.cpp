@@ -3,7 +3,9 @@
 #include "Globals.hpp"
 
 #include <algorithm>
+#include <array>
 #include <charconv>
+#include <cmath>
 #include <cstring>
 #include <hyprland/src/config/ConfigManager.hpp>
 #include <hyprland/src/config/lua/ConfigManager.hpp>
@@ -37,6 +39,50 @@ std::optional<ELayerMaskMode> parseLayerMaskMode(std::string_view value) {
     if (value == "auto")   return ELayerMaskMode::AUTO;
     if (value == "alpha")  return ELayerMaskMode::ALPHA;
     if (value == "region") return ELayerMaskMode::REGION;
+    return std::nullopt;
+}
+
+// Far beyond any monitor, but small enough that scaled sums and squares in the
+// shader and the box maths stay finite.
+constexpr double SHAPE_LIMIT_PX = 16384.0;
+
+static float clampShapeInset(double value) {
+    return static_cast<float>(std::clamp(value, -SHAPE_LIMIT_PX, SHAPE_LIMIT_PX));
+}
+
+// Any negative radius means a capsule.
+static float clampShapeRadius(double value) {
+    return value < 0.0 ? -1.0f : static_cast<float>(std::min(value, SHAPE_LIMIT_PX));
+}
+
+std::optional<SLayerShape> parseLayerShape(std::string_view value) {
+    std::array<float, 5> fields{};
+    size_t               count = 0;
+
+    while (true) {
+        const size_t separator = value.find(':');
+        std::string_view field = value.substr(0, separator);
+        while (!field.empty() && (field.front() == ' ' || field.front() == '\t'))
+            field.remove_prefix(1);
+        while (!field.empty() && (field.back() == ' ' || field.back() == '\t'))
+            field.remove_suffix(1);
+
+        float number = 0.0f;
+        const auto [end, error] = std::from_chars(field.data(), field.data() + field.size(), number);
+        if (field.empty() || count == fields.size() || error != std::errc{} || end != field.data() + field.size() ||
+            !std::isfinite(number))
+            return std::nullopt;
+        fields[count++] = number;
+
+        if (separator == std::string_view::npos)
+            break;
+        value.remove_prefix(separator + 1);
+    }
+
+    if (count == 2)
+        return SLayerShape{clampShapeInset(fields[0]), clampShapeInset(fields[0]), clampShapeInset(fields[0]), clampShapeInset(fields[0]), clampShapeRadius(fields[1])};
+    if (count == 5)
+        return SLayerShape{clampShapeInset(fields[0]), clampShapeInset(fields[1]), clampShapeInset(fields[2]), clampShapeInset(fields[3]), clampShapeRadius(fields[4])};
     return std::nullopt;
 }
 
@@ -81,6 +127,7 @@ void registerConfig(HANDLE handle) {
     addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_MODES, Config::STRING{});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LAYERS_MASK_FEATHER, Config::FLOAT{0.0});
     addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_FEATHERS, Config::STRING{});
+    addConfigValue<Config::Values::String>(handle, ConfigKeys::LAYERS_NAMESPACE_SHAPES, Config::STRING{});
     addConfigValue<Config::Values::Int>(handle, ConfigKeys::LAYERS_MANAGE_BLUR, Config::INTEGER{1});
 
     // Subsurface item glass
@@ -319,6 +366,7 @@ void initConfigPointers(HANDLE handle, SPluginConfig& config) {
     config.layersNamespaceMaskModes = getStringPtr(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_MODES);
     config.layersMaskFeather           = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::LAYERS_MASK_FEATHER);
     config.layersNamespaceMaskFeathers = getStringPtr(handle, ConfigKeys::LAYERS_NAMESPACE_MASK_FEATHERS);
+    config.layersNamespaceShapes       = getStringPtr(handle, ConfigKeys::LAYERS_NAMESPACE_SHAPES);
     config.layersManageBlur         = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::LAYERS_MANAGE_BLUR);
 
     config.subsurfacesEnabled = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::SUBSURFACES_ENABLED);
@@ -803,9 +851,50 @@ struct SPendingLayer {
     bool                          exclude       = false;
     int                           liveResample  = -1; // -1 = not set
     std::optional<ELayerMaskMode> maskMode;
+    std::optional<SLayerShape>    shape;
 };
 
 static std::vector<SPendingLayer> s_pendingLayers;
+
+// shape = { inset = px or {top, right, bottom, left}, radius = px }, both optional (0).
+static std::optional<SLayerShape> readLuaLayerShape(lua_State* L, int tableIdx) {
+    SLayerShape shape;
+    bool        valid = true;
+
+    lua_getfield(L, tableIdx, "inset");
+    if (lua_isnumber(L, -1)) {
+        const double inset = lua_tonumber(L, -1);
+        valid = valid && std::isfinite(inset);
+        shape.insetTop = shape.insetRight = shape.insetBottom = shape.insetLeft = clampShapeInset(inset);
+    } else if (lua_istable(L, -1)) {
+        const int                   insetIdx = lua_gettop(L);
+        const std::array<float*, 4> sides    = {&shape.insetTop, &shape.insetRight, &shape.insetBottom, &shape.insetLeft};
+        for (size_t i = 0; i < sides.size(); i++) {
+            lua_rawgeti(L, insetIdx, static_cast<lua_Integer>(i + 1));
+            const double side = lua_isnumber(L, -1) ? lua_tonumber(L, -1) : std::nan("");
+            valid             = valid && std::isfinite(side);
+            *sides[i]         = clampShapeInset(side);
+            lua_pop(L, 1);
+        }
+    } else if (!lua_isnil(L, -1)) {
+        valid = false;
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, tableIdx, "radius");
+    if (lua_isnumber(L, -1)) {
+        const double radius = lua_tonumber(L, -1);
+        valid               = valid && std::isfinite(radius);
+        shape.radius        = clampShapeRadius(radius);
+    } else if (!lua_isnil(L, -1)) {
+        valid = false;
+    }
+    lua_pop(L, 1);
+
+    if (!valid)
+        return std::nullopt;
+    return shape;
+}
 
 static int handleLuaLayer(lua_State* L) {
     if (lua_gettop(L) < 1 || !lua_isstring(L, 1))
@@ -844,6 +933,17 @@ static int handleLuaLayer(lua_State* L) {
         if (lua_isstring(L, -1))
             entry.maskMode = parseLayerMaskMode(lua_tostring(L, -1));
         lua_pop(L, 1);
+
+        lua_getfield(L, 2, "shape");
+        if (!lua_isnil(L, -1)) {
+            entry.shape = lua_istable(L, -1) ? readLuaLayerShape(L, lua_gettop(L)) : std::nullopt;
+            // not a Lua error: it would unwind past entry's strings
+            if (!entry.shape) {
+                if (const auto luaMgr = luaConfigManager())
+                    luaMgr->addError(std::format("hyprglass.layer: invalid shape for '{}', expected {{ inset = px or {{top, right, bottom, left}}, radius = px }}", entry.ns));
+            }
+        }
+        lua_pop(L, 1);
     }
 
     s_pendingLayers.push_back(std::move(entry));
@@ -871,6 +971,8 @@ void commitPendingLayers() {
                 g_pGlobalState->layerNamespaceLiveResample[entry.ns] = entry.liveResample != 0;
             if (entry.maskMode)
                 g_pGlobalState->layerNamespaceMaskModes[entry.ns] = *entry.maskMode;
+            if (entry.shape)
+                g_pGlobalState->layerNamespaceShapes[entry.ns] = *entry.shape;
         }
     }
     s_pendingLayers.clear();
