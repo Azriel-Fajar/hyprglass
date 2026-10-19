@@ -46,6 +46,29 @@ struct SFoldedBlur {
 // the input is returned unchanged.
 [[nodiscard]] SFoldedBlur foldBlurPasses(float radius, int iterations) noexcept;
 
+// Above half the smaller side the bezel already covers the whole glass, so a larger
+// edge_thickness_px could only flatten the centre's falloff further.
+inline constexpr float EDGE_THICKNESS_PX_MAX_FRACTION = 0.5f;
+
+// Bezel width as a fraction of the glass shape's smaller side. edge_thickness_px is in
+// logical pixels (scaled like bevel_size); when it is > 0 it replaces the relative
+// edge_thickness, which is returned untouched otherwise.
+[[nodiscard]] constexpr float effectiveEdgeThickness(float relative, float pixelsLogical, float monitorScale,
+                                                     float minDimensionPhysical) noexcept {
+    if (!(pixelsLogical > 0.0f) || !(minDimensionPhysical > 0.0f))
+        return relative;
+    const float scale = monitorScale > 0.0f ? monitorScale : 1.0f;
+    return std::min(pixelsLogical * scale / minDimensionPhysical, EDGE_THICKNESS_PX_MAX_FRACTION);
+}
+
+static_assert(effectiveEdgeThickness(0.06f, 0.0f, 1.0f, 400.0f) == 0.06f);
+static_assert(effectiveEdgeThickness(0.06f, 12.0f, 1.0f, 400.0f) == 0.03f);
+static_assert(effectiveEdgeThickness(0.06f, 12.0f, 2.0f, 800.0f) == 0.03f);
+static_assert(effectiveEdgeThickness(0.06f, 10000.0f, 1.0f, 400.0f) == EDGE_THICKNESS_PX_MAX_FRACTION);
+static_assert(effectiveEdgeThickness(0.06f, -5.0f, 1.0f, 400.0f) == 0.06f);
+static_assert(effectiveEdgeThickness(0.06f, 12.0f, 1.0f, 0.0f) == 0.06f);
+static_assert(effectiveEdgeThickness(0.06f, 12.0f, 1.0f, -10.0f) == 0.06f);
+
 // Must match the `regionRects[64]` array size declared in Shaders.hpp. 64 lets a client trace a
 // rounded shape to within a pixel or two; at 16 a capsule's curve steps by several pixels, and
 // anything the client draws just outside the shape (a glow, a shadow) falls inside the steps.
@@ -83,7 +106,7 @@ struct SMaskInfo {
     Vector2D sampleUVOffset{0.0, 0.0};
     Vector2D sampleUVScale{1.0, 1.0};
 
-    // Subsurface items only: the rounded-box SDF's own sub-rect within the
+    // Subsurface items only: the glass shape's own sub-rect within the
     // drawn box, box-local pixels (see Shaders.hpp's glassBoxOffsetPx/SizePx).
     // Sentinel (negative size) means "use the full drawn box", applyGlassEffect's
     // old, unconditional behaviour — every other caller (windows, alpha-mask

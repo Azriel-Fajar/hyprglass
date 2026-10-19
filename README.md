@@ -177,6 +177,7 @@ Settings resolve through: **preset chain** (theme variant, shared, inherited) th
 | `bevel_shadow` | float | `0.0` | — | — | Darkening of the bevel line on the side away from the light (0.0-1.0) |
 | `glass_opacity` | float | `1.0` | — | — | Overall glass opacity (0.0-1.0) |
 | `edge_thickness` | float | `0.06` | — | — | Bezel width, fraction of smallest dimension (0.0-0.15) |
+| `edge_thickness_px` | float | `0.0` | — | — | Bezel width in logical pixels, the same on every window size and monitor scale. Above `0` it replaces `edge_thickness`, see [Edge thickness in pixels](#edge-thickness-in-pixels) |
 | `tint_color` | color | `0x8899aa22` | — | — | Glass tint RRGGBBAA hex. Alpha = tint strength |
 | `lens_distortion` | float | `0.5` | — | — | Center dome magnification (0.0-1.0) |
 | `self_sample` | float | `0.0` | — | — | Mixes the window's own content into the glass behind it (0.0-1.0). Windows only |
@@ -191,7 +192,7 @@ Settings resolve through: **preset chain** (theme variant, shared, inherited) th
 
 `—` in Global Default = falls through to per-theme default. `—` in Dark/Light = inherits global value.
 
-Ranges in parentheses are the usual span, not limits: only `blur_iterations` and `self_sample` are clamped, and the built-in presets go past some of them (`glass` uses `refraction_strength = 8.0`).
+Ranges in parentheses are the usual span, not limits: only `blur_iterations`, `self_sample` and `edge_thickness_px` (at most half the smaller side) are clamped, and the built-in presets go past some of them (`glass` uses `refraction_strength = 8.0`).
 
 #### Self sampling
 
@@ -278,6 +279,30 @@ preset = name:frosted, inherits:subtle, noise_strength:0.5
 ```
 
 - The built-in `clear` preset turns the grain off, as it does the blur
+
+#### Edge thickness in pixels
+
+`edge_thickness` is a fraction of the window's smaller side, so big windows get a wide edge and small ones a thin edge. `edge_thickness_px` gives every window the same edge width, in logical pixels. `0` (default) keeps `edge_thickness`.
+
+**On the fly:**
+```bash
+hyprctl keyword plugin:hyprglass:edge_thickness_px 12
+```
+
+**Lua:**
+```lua
+hg.config({ edge_thickness_px = 12 })
+hg.preset("relative", { inherits = "glass", edge_thickness_px = 0 })   -- back to edge_thickness
+```
+
+**Legacy .conf:**
+```ini
+edge_thickness_px = 12
+preset = name:relative, inherits:glass, edge_thickness_px:0
+```
+
+- Applies to windows, layers and subsurface items
+- Never wider than half the smaller side of the glass: the window, the layer, or a subsurface item's shape
 
 ### Layer surfaces
 
@@ -491,7 +516,7 @@ The window/layer is modeled as a **thick convex glass slab**. The rendering pipe
 
 1. **Background sampling** — The framebuffer behind the window is captured with padding (content beyond the window boundary is included). `self_sample` mixes the window's own content into this capture.
 2. **Gaussian blur** — Multi-pass two-pass (horizontal + vertical) Gaussian blur for the frosted look.
-3. **Glass height field** — An SDF-based height profile: 1.0 deep inside the window, smooth S-curve to 0.0 at the edge. The transition width is `edge_thickness`.
+3. **Glass height field** — An SDF-based height profile: 1.0 deep inside the window, smooth S-curve to 0.0 at the edge. The transition width is `edge_thickness` (or `edge_thickness_px` when set).
 4. **Edge refraction** — The height field gradient drives UV displacement. At the center the gradient is near-zero (no distortion). At the edges the gradient is steep, pushing sample UVs outward — pulling in content from beyond the window boundary. This creates natural color bleeding.
 5. **Chromatic aberration** — R, G, B channels are sampled with slightly different refraction scales (blue bends more), creating spectral fringing at edges.
 6. **Center dome lens** — Subtle barrel magnification in the flat interior, controlled by `lens_distortion`.

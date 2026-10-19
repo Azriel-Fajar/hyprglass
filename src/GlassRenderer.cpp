@@ -464,13 +464,37 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     // a rounding_power window rule bypasses Hyprland's [2, 10] clamp; <= 0 is NaN in the SDF
     const float safeRoundingPower = std::max(roundingPower, 1.0f);
 
+    // The glass shape within the drawn box (see SMaskInfo::glassBoxSizePx): only
+    // subsurface items set one; the sentinel (negative) means the whole box.
+    // Bezel, lens and refraction are sized and centred on it, not on the drawn box.
+    Vector2D glassBoxOffsetPx{0.0, 0.0};
+    Vector2D glassBoxSizePx = fullSize;
+    if (mask && mask->glassBoxSizePx.x >= 0.0 && mask->glassBoxSizePx.y >= 0.0) {
+        glassBoxOffsetPx = mask->glassBoxOffsetPx;
+        glassBoxSizePx   = mask->glassBoxSizePx;
+    }
+    glUniform2f(uniforms.glassBoxOffsetPx, static_cast<float>(glassBoxOffsetPx.x), static_cast<float>(glassBoxOffsetPx.y));
+    glUniform2f(uniforms.glassBoxSizePx, static_cast<float>(glassBoxSizePx.x), static_cast<float>(glassBoxSizePx.y));
+    // x / x is exactly 1 and 0 / x exactly 0, so the whole-box case maps uv to itself bit for bit
+    glUniform2f(uniforms.glassUVScale,
+        static_cast<float>(glassBoxSizePx.x > 0.0 ? fullSize.x / glassBoxSizePx.x : 1.0),
+        static_cast<float>(glassBoxSizePx.y > 0.0 ? fullSize.y / glassBoxSizePx.y : 1.0));
+    glUniform2f(uniforms.glassUVOffset,
+        static_cast<float>(glassBoxSizePx.x > 0.0 ? glassBoxOffsetPx.x / glassBoxSizePx.x : 0.0),
+        static_cast<float>(glassBoxSizePx.y > 0.0 ? glassBoxOffsetPx.y / glassBoxSizePx.y : 0.0));
+
     // Reciprocals computed once per draw instead of once per pixel in the shader.
-    const float minDimensionPx = static_cast<float>(std::min(fullSize.x, fullSize.y));
+    const float minDimensionPx = static_cast<float>(std::min(glassBoxSizePx.x, glassBoxSizePx.y));
     glUniform2f(uniforms.invFullSize,
         1.0f / static_cast<float>(fullSize.x), 1.0f / static_cast<float>(fullSize.y));
     glUniform1f(uniforms.invRoundingPower, 1.0f / safeRoundingPower);
 
-    const float edgeThicknessValue = resolvePresetFloat(resolveContext, &SPresetValues::edgeThickness, &SOverridableConfig::edgeThickness);
+    const auto  monitor            = g_pHyprRenderer->m_renderData.pMonitor.lock();
+    const float monitorScale       = monitor && monitor->m_scale > 0.0f ? monitor->m_scale : 1.0f;
+    const float edgeThicknessValue = effectiveEdgeThickness(
+        resolvePresetFloat(resolveContext, &SPresetValues::edgeThickness, &SOverridableConfig::edgeThickness),
+        resolvePresetFloat(resolveContext, &SPresetValues::edgeThicknessPx, &SOverridableConfig::edgeThicknessPx),
+        monitorScale, minDimensionPx);
     const float lensDistortionValue = resolvePresetFloat(resolveContext, &SPresetValues::lensDistortion, &SOverridableConfig::lensDistortion);
     // Epsilon guard matches the shader's own degenerate-size behaviour (bezelWidthPx == 0 would divide by zero).
     glUniform1f(uniforms.invBezelWidthPx, 1.0f / std::max(edgeThicknessValue * minDimensionPx, 1e-4f));
@@ -495,8 +519,7 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     glUniform1f(uniforms.bevelShadow,         resolvePresetFloat(resolveContext, &SPresetValues::bevelShadow, &SOverridableConfig::bevelShadow));
 
     // bevel width is defined in logical px; scale it to framebuffer px per monitor
-    const auto monitor = g_pHyprRenderer->m_renderData.pMonitor.lock();
-    glUniform1f(uniforms.monitorScale, monitor && monitor->m_scale > 0.0f ? monitor->m_scale : 1.0f);
+    glUniform1f(uniforms.monitorScale, monitorScale);
 
     uploadThemeUniforms(resolveContext);
 
@@ -566,19 +589,6 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
 
     glUniform4f(uniforms.radii, radii[0], radii[1], radii[2], radii[3]);
     shader->setUniformFloat(SHADER_ROUNDING_POWER, safeRoundingPower);
-
-    // Subsurface items only: SDF sub-rect within the drawn box (see
-    // SMaskInfo::glassBoxSizePx). Sentinel (negative) falls back to the whole
-    // box — windows and alpha-mask layers always take this path, unchanged
-    // from before this uniform existed.
-    Vector2D glassBoxOffsetPx{0.0, 0.0};
-    Vector2D glassBoxSizePx = fullSize;
-    if (mask && mask->glassBoxSizePx.x >= 0.0 && mask->glassBoxSizePx.y >= 0.0) {
-        glassBoxOffsetPx = mask->glassBoxOffsetPx;
-        glassBoxSizePx   = mask->glassBoxSizePx;
-    }
-    glUniform2f(uniforms.glassBoxOffsetPx, static_cast<float>(glassBoxOffsetPx.x), static_cast<float>(glassBoxOffsetPx.y));
-    glUniform2f(uniforms.glassBoxSizePx, static_cast<float>(glassBoxSizePx.x), static_cast<float>(glassBoxSizePx.y));
 
     glBindVertexArray(shader->getUniformLocation(SHADER_SHADER_VAO));
 
