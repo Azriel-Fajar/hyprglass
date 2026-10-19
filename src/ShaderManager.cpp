@@ -23,7 +23,7 @@ bool CShaderManager::compileGlassShader() {
             true
         )) {
         HyprlandAPI::addNotification(PHANDLE,
-            std::format("[{}] Failed to compile glass shader", PLUGIN_NAME),
+            std::format("[{}] Failed to compile glass shader, glass is off until the plugin is reloaded", PLUGIN_NAME),
             CHyprColor{1.0, 0.2, 0.2, 1.0}, 5000);
         return false;
     }
@@ -92,7 +92,7 @@ bool CShaderManager::compileBlurShader() {
             true
         )) {
         HyprlandAPI::addNotification(PHANDLE,
-            std::format("[{}] Failed to compile blur shader", PLUGIN_NAME),
+            std::format("[{}] Failed to compile blur shader, glass is off until the plugin is reloaded", PLUGIN_NAME),
             CHyprColor{1.0, 0.2, 0.2, 1.0}, 5000);
         return false;
     }
@@ -106,7 +106,7 @@ bool CShaderManager::compileBlurShader() {
 }
 
 void CShaderManager::initializeIfNeeded() {
-    if (m_initialized)
+    if (m_initialized || m_compileFailed)
         return;
 
     m_initialized   = compileGlassShader() && compileBlurShader();

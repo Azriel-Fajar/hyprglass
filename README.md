@@ -567,7 +567,7 @@ hyprglass 0.9.1: active
 | `version` | Same as `hyprctl plugin list`. |
 | `versionCheck` | `match` (built for this Hyprland), `unknown` (Hyprland or hyprglass was built without a release tag or commit: only Hyprland's libraries were checked) or `skipped` (`HYPRGLASS_SKIP_VERSION_CHECK`). |
 | `active` | `true` when at least one feature is active. |
-| `shaders` | `ready`, `pending` (compiled at the first glass draw) or `failed` (retried at the next draw). |
+| `shaders` | `ready`, `pending` (compiled at the first glass draw) or `failed` (glass stays off until the plugin is reloaded). |
 | `itemProtocol` | `hyprglass_item_v1` is offered to clients. |
 | `features.*.enabled` | The setting: `enabled`, `layers:enabled`, `subsurfaces:enabled`. |
 | `features.*.active` | The feature draws glass. `windows` is active with `enabled = 0` while a window tagged `hyprglass_enabled` is open. |

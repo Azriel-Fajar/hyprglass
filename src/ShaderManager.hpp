@@ -69,7 +69,8 @@ struct SBlurUniforms {
 class CShaderManager {
   public:
     [[nodiscard]] bool isInitialized() const noexcept { return m_initialized; }
-    // The last compile attempt failed; it is retried at the next glass draw.
+    // A shader failed to compile. Not retried before the plugin is reloaded: every
+    // attempt would stall the frame and notify again.
     [[nodiscard]] bool compileFailed() const noexcept { return m_compileFailed; }
 
     void initializeIfNeeded();
