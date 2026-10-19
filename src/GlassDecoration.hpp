@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Frost.hpp"
 #include "GlassRenderer.hpp"
 #include "PluginConfig.hpp"
 
@@ -124,6 +125,13 @@ class CGlassDecoration : public IHyprWindowDecoration {
     [[nodiscard]] bool  focusLightFading(std::chrono::steady_clock::time_point now) const;
     [[nodiscard]] float focusLightLevel(std::chrono::steady_clock::time_point now) const;
     void                damageFocusLight();
+
+    // Frost: the eased amount and the frosted copy of the sample (see Frost.hpp).
+    Frost::CFrostState m_frost;
+    MONITORID          m_frostMonitor = -1; // the monitor the amount was last stepped for
+
+    // Damages the glass box only: frost changes how the cached sample is drawn, not the sample.
+    void damageFrost();
 
     // Frame serial the last glass element was queued for, and its index in that
     // frame. Hyprland renders a floating window over fullscreen more than once

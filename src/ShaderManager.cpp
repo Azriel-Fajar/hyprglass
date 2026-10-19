@@ -86,6 +86,8 @@ bool CShaderManager::compileGlassProgram(SGlassProgram& glass, GlassFeatureMask 
     glassUniforms.focusLight            = glGetUniformLocation(program, "focusLight");
     glassUniforms.focusLightColor       = glGetUniformLocation(program, "focusLightColor");
     glassUniforms.focusLightColorAlpha  = glGetUniformLocation(program, "focusLightColorAlpha");
+    glassUniforms.frostTex              = glGetUniformLocation(program, "frostTex");
+    glassUniforms.frostAmount           = glGetUniformLocation(program, "frostAmount");
 
     return true;
 }

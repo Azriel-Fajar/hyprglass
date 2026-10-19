@@ -56,6 +56,8 @@ namespace GlobalDefaults {
     inline constexpr int64_t XRAY                 = 0;
     inline constexpr float   FOCUS_LIGHT          = 0.0f; // 0 = no light on the active window
     inline constexpr int64_t FOCUS_LIGHT_COLOR    = 0xffffff00;
+    inline constexpr float   FROST                = 0.0f; // 0 = no frost behind windows
+    inline constexpr float   FROST_BLUR           = 3.0f; // extra blur, in blur_strength units
 } // namespace GlobalDefaults
 
 // ── Built-in presets ─────────────────────────────────────────────────────────

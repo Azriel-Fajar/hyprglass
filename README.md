@@ -186,6 +186,8 @@ Settings resolve through: **preset chain** (theme variant, shared, inherited) th
 | `xray` | int | `0` | — | — | `1` hides the windows under the glass: only the wallpaper shows through. See [X-ray](#x-ray) |
 | `focus_light` | float | `0.0` | — | — | Light along the glass edge of the active window, `0` off. See [Focus light](#focus-light) (0.0-1.0). Windows only |
 | `focus_light_color` | color | `0xffffff00` | — | — | Color of the focus light; alpha sets how much it replaces white (0xRRGGBBAA) |
+| `frost` | float | `0.0` | — | — | The glass blurs further where other windows are behind it and stays clear over the wallpaper, `0` off. See [Frost](#frost) (0.0-1.0). Windows only |
+| `frost_blur` | float | `3.0` | — | — | Extra blur of the frost, in `blur_strength` units on top of it. Needs `frost` (0.5-3, at most 10: past about 3 the blur stops getting wider) |
 | `brightness` | float | — | `0.82` | `1.12` | Brightness multiplier |
 | `contrast` | float | — | `0.90` | `0.92` | Contrast around midpoint |
 | `saturation` | float | — | `0.80` | `0.85` | Desaturation (0 = grayscale, 1 = full) |
@@ -196,7 +198,7 @@ Settings resolve through: **preset chain** (theme variant, shared, inherited) th
 
 `—` in Global Default = falls through to per-theme default. `—` in Dark/Light = inherits global value.
 
-Ranges in parentheses are the usual span, not limits: only `blur_iterations`, `self_sample`, `focus_light`, `fresnel_reflection`, `edge_thickness_px` (at most half the smaller side) and `edge_height` (at most 500) are clamped, and the built-in presets go past some of them (`glass` uses `refraction_strength = 8.0`).
+Ranges in parentheses are the usual span, not limits: only `blur_iterations`, `self_sample`, `focus_light`, `frost`, `fresnel_reflection`, `edge_thickness_px` (at most half the smaller side) and `edge_height` (at most 500) are clamped, and the built-in presets go past some of them (`glass` uses `refraction_strength = 8.0`).
 
 #### Self sampling
 
@@ -371,6 +373,42 @@ preset = name:terminal, inherits:clear, focus_light:1.0
 - With `animations:enabled = 0` it switches without a fade
 
 **Cost:** none while `focus_light` is `0`. Above `0`, a little extra GPU work on the active window only. When focus moves, a few redrawn frames and one extra refresh of the glass around the two windows. Nothing is redrawn while focus stays put.
+
+#### Frost
+
+`frost` blurs the glass further where other windows are behind it, and leaves it clear over the wallpaper. A floating terminal stays crisp on an empty desktop and turns into frosted glass when it slides over a browser, so the text behind never fights the text in front. `0` (default) turns it off.
+
+It is a low `blur_strength` that makes it worth it: with the default blur the glass is already frosted everywhere. Pair `frost` with a clear look, like the `clear` preset.
+
+**On the fly:**
+```bash
+hyprctl keyword plugin:hyprglass:frost 1.0
+hyprctl keyword plugin:hyprglass:frost_blur 2.0
+```
+
+**Lua:**
+```lua
+hg.config({ frost = 1.0, frost_blur = 2.0 })
+hg.preset("terminal", { inherits = "clear", frost = 1.0 })
+```
+
+**Legacy .conf:**
+```ini
+frost = 1.0
+frost_blur = 2.0
+preset = name:terminal, inherits:clear, frost:1.0
+```
+
+- `frost` is how frosted the glass gets once windows cover it: `0.5` is half way between clear and fully frosted
+- `frost_blur` is the extra blur, in the same unit as `blur_strength`, on top of it
+- The glass frosts once windows behind it cover about 4% of it and is fully frosted from about 45%, fading over a fraction of a second
+- Only windows below the glass count: windows above it, and the wallpaper, do not
+- Tiled windows rarely overlap, so it mostly shows on floating windows and while windows slide
+- Windows only: layers and subsurface items ignore it, and so does a fullscreen window
+- Off with `xray = 1`, which never shows windows behind the glass
+- With `animations:enabled = 0` it switches without a fade
+
+**Cost:** none while `frost` is `0`, and none while the glass is clear over the wallpaper. While it is frosted, a little extra GPU work and a few MB of memory per glass window (freed once it is clear again), plus a few redrawn frames while it fades.
 
 ### Layer surfaces
 
@@ -682,8 +720,8 @@ hyprctl -j hyprglass stats       # same, as JSON
 hyprglass stats
   stage timers: off (plugin:hyprglass:debug:timers = 0)
 
-  monitor        frames  win_draws  opaque_skip  win_hit  win_miss  win_defer  win_disc  layer_draws  layer_hit  layer_miss  layer_defer  sub_draws  sub_hit  sub_miss  sub_defer  xray_copy  xray_defer  xray_evict  blur_pass  sampled_mpx  glass_mpx
-  eDP-1            7212       3401         5122     3120       240         41         0         1560       1420          92            3        410      380        22          8          0           0           0       5520        41.30      18.77
+  monitor        frames  win_draws  opaque_skip  win_hit  win_miss  win_defer  win_disc  layer_draws  layer_hit  layer_miss  layer_defer  sub_draws  sub_hit  sub_miss  sub_defer  xray_copy  xray_defer  xray_evict  blur_pass  sampled_mpx  glass_mpx  frost_build
+  eDP-1            7212       3401         5122     3120       240         41         0         1560       1420          92            3        410      380        22          8          0           0           0       5520        41.30      18.77            0
   eDP-1          per frame: 0.47 win draws, 0.22 layer draws, 0.06 sub draws, 0.77 blur passes, 0.006 sampled mpx, 0.003 glass mpx
 ```
 
