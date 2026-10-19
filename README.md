@@ -463,7 +463,7 @@ hyprctl dispatch tagwindow +hyprglass_preset_subtle
 
 ### Presets
 
-Presets are named config overrides. They can be **built-in** or **user-defined**. User presets with the same name override built-in ones.
+Presets are named config overrides. They can be **built-in** or **user-defined**. A user preset with the same name as a built-in one extends it: the options you set replace the built-in values, the others keep them.
 
 Each preset can have shared values (theme-agnostic), a dark variant, a light variant, and can inherit from another preset.
 
