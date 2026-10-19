@@ -181,8 +181,9 @@ void blurBackground(Render::CRenderContext& ctx, SP<Render::IFramebuffer> sample
 // The frosted copy of a window's sample (see Frost.hpp): the sample at half its size, blurred
 // further by radius (in that smaller framebuffer's pixels). `copy` and `temporary` are the caller's,
 // allocated here and reused while the size holds. callerFramebuffer is left bound, as blurBackground() does.
-bool buildFrostCopy(const SP<Render::IFramebuffer>& sample, SP<Render::IFramebuffer>& copy, SP<Render::IFramebuffer>& temporary,
-                    float radius, int iterations, const SP<Render::IFramebuffer>& callerFramebuffer);
+bool buildFrostCopy(Render::CRenderContext& ctx, const SP<Render::IFramebuffer>& sample, SP<Render::IFramebuffer>& copy,
+                    SP<Render::IFramebuffer>& temporary, float radius, int iterations,
+                    const SP<Render::IFramebuffer>& callerFramebuffer);
 
 // What a window's glass draw needs for frost: the frosted copy and how much of it shows (0..1).
 struct SFrostInput {

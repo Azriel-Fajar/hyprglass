@@ -149,8 +149,8 @@ class CGlassLayerSurface {
     // Brings the field up to date for this draw (a build when one is due and this frame redraws
     // the whole layer) and points maskInfo at it. False: draw with the layer's rectangle, as every
     // other layer does: no field yet, a stale one for another size, or contour unavailable.
-    [[nodiscard]] bool attachContour(PHLMONITOR monitor, const CBox& transformBox, float alpha, float maskThreshold,
-                                     const SResolveContext& ctx, GlassRenderer::SMaskInfo& maskInfo);
+    [[nodiscard]] bool attachContour(Render::CRenderContext& ctx, PHLMONITOR monitor, const CBox& transformBox, float alpha,
+                                     float maskThreshold, const SResolveContext& resolveContext, GlassRenderer::SMaskInfo& maskInfo);
 
     [[nodiscard]] bool           resolveThemeIsDark() const;
     [[nodiscard]] std::string    resolvePresetName() const;

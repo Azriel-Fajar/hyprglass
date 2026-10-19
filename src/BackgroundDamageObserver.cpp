@@ -159,7 +159,7 @@ namespace {
                 continue;
 
             const auto layer = state->getLayerSurface();
-            if (!layer || !layer->m_mapped || !layer->wlSurface())
+            if (!layer || !layer->mapped() || !layer->wlSurface())
                 continue;
 
             // the layer's own surfaces, not its popups: those are not in what the field was traced from

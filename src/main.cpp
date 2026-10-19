@@ -490,7 +490,7 @@ static void hkRenderLayer(Render::IHyprRenderer* thisptr, Render::CRenderContext
     }
 
     if (layerSkippedForLock(layerSurface, lockscreen)) {
-        ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, layerSurface, monitor, now, popups, lockscreen);
+        ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, ctx, layerSurface, monitor, now, popups, lockscreen);
         return;
     }
 

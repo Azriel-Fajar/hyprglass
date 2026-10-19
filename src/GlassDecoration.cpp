@@ -151,7 +151,7 @@ void CGlassDecoration::onActiveWindowChanged(const PHLWINDOW& activeWindow) {
 
     // a hidden workspace keeps its last strength; renderPass() damages it once shown
     const auto window = m_window.lock();
-    if (m_lastFocusLightStrength > 0.0f && window && window->m_workspace && window->m_workspace->isVisible())
+    if (m_lastFocusLightStrength > 0.0f && window && window->m_workspace && window->m_workspace->visible())
         damageFocusLight();
 }
 
@@ -537,7 +537,7 @@ void CGlassDecoration::renderPass(Render::CRenderContext& ctx, PHLMONITOR monito
         glassAlpha *= workspace->m_alpha->value();
 
     // A fullscreen window shows no edge, like Hyprland draws it no border.
-    m_lastFocusLightStrength = fsUnrounded ? 0.0f : focusLightFor(ctx);
+    m_lastFocusLightStrength = fsUnrounded ? 0.0f : focusLightFor(resolveContext);
     float focusLight         = 0.0f;
     if (m_lastFocusLightStrength > 0.0f) {
         const auto now = std::chrono::steady_clock::now();
@@ -652,7 +652,7 @@ void CGlassDecoration::renderPass(Render::CRenderContext& ctx, PHLMONITOR monito
                     frostIterations = folded.iterations;
                 }
 
-                if (GlassRenderer::buildFrostCopy(m_sampleFramebuffer, m_frost.copy(), m_frost.temporary(), frostRadius, frostIterations, source)) {
+                if (GlassRenderer::buildFrostCopy(ctx, m_sampleFramebuffer, m_frost.copy(), m_frost.temporary(), frostRadius, frostIterations, source)) {
                     m_frost.built(radius);
                     Diagnostics::recordFrostRebuild(monitorId);
                 }

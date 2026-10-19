@@ -499,12 +499,12 @@ void CGlassLayerSurface::sampleAndRedirect(Render::CRenderContext& ctx, PHLMONIT
     m_redirectedThisFrame = true;
 }
 
-bool CGlassLayerSurface::attachContour(PHLMONITOR monitor, const CBox& transformBox, float alpha, float maskThreshold,
-                                       const SResolveContext& ctx, GlassRenderer::SMaskInfo& maskInfo) {
+bool CGlassLayerSurface::attachContour(Render::CRenderContext& ctx, PHLMONITOR monitor, const CBox& transformBox, float alpha,
+                                       float maskThreshold, const SResolveContext& resolveContext, GlassRenderer::SMaskInfo& maskInfo) {
     if (g_pGlobalState->contourUnavailable)
         return false;
 
-    const auto target = g_pHyprRenderer->m_renderData.currentFB;
+    const auto target = ctx.m_data.currentFB;
     if (!target || !m_surfaceTempFramebuffer || !monitor)
         return false;
 
@@ -515,10 +515,10 @@ bool CGlassLayerSurface::attachContour(PHLMONITOR monitor, const CBox& transform
     // The shader's own bezel and bevel widths, in the same units: they set how far the field reaches.
     const float reference = Contour::referencePx(boxWidth, boxHeight, scale);
     const float bezelPx   = GlassRenderer::effectiveEdgeThickness(
-                              resolvePresetFloat(ctx, &SPresetValues::edgeThickness, &SOverridableConfig::edgeThickness),
-                              resolvePresetFloat(ctx, &SPresetValues::edgeThicknessPx, &SOverridableConfig::edgeThicknessPx), scale, reference) *
+                              resolvePresetFloat(resolveContext, &SPresetValues::edgeThickness, &SOverridableConfig::edgeThickness),
+                              resolvePresetFloat(resolveContext, &SPresetValues::edgeThicknessPx, &SOverridableConfig::edgeThicknessPx), scale, reference) *
                           reference;
-    const float rimPx = std::max(resolvePresetFloat(ctx, &SPresetValues::bevelSize, &SOverridableConfig::bevelSize) * scale, 1.0f);
+    const float rimPx = std::max(resolvePresetFloat(resolveContext, &SPresetValues::bevelSize, &SOverridableConfig::bevelSize) * scale, 1.0f);
 
     const auto plan = Contour::makePlan(boxWidth, boxHeight, bezelPx, rimPx, scale);
     if (!plan)
@@ -540,8 +540,8 @@ bool CGlassLayerSurface::attachContour(PHLMONITOR monitor, const CBox& transform
 
     if (m_contour.wantsBuild(key)) {
         // The temp FBO only holds what this frame redrew: a field needs all of the layer in it.
-        if (GlassRenderer::damageCoversBox(transformBox, target, g_pHyprRenderer->m_renderData.damage, monitor)) {
-            if (!m_contour.build(key, m_surfaceTempFramebuffer, transformBox, alpha, target) && g_pGlobalState->contourUnavailable)
+        if (GlassRenderer::damageCoversBox(transformBox, target, ctx.m_data.damage, monitor)) {
+            if (!m_contour.build(ctx, key, m_surfaceTempFramebuffer, transformBox, alpha, target) && g_pGlobalState->contourUnavailable)
                 return false;
         } else if (m_contour.noteUncoveredFrame())
             damageSampleRegion();
@@ -687,7 +687,7 @@ void CGlassLayerSurface::compositeAndRestore(Render::CRenderContext& ctx, PHLMON
 
     // The traced outline is the glass shape: a fixed shape would only fight it, so it applies
     // when the layer has no field (yet).
-    const bool contoured = maskSource == EMaskSource::CONTOUR && attachContour(monitor, transformBox, alpha, contourThreshold, ctx, maskInfo);
+    const bool contoured = maskSource == EMaskSource::CONTOUR && attachContour(ctx, monitor, transformBox, alpha, contourThreshold, resolveContext, maskInfo);
 
     // A fixed shape replaces the layer box as the glass outline. The quad stays
     // the layer box, so content outside the shape is still drawn, without glass.

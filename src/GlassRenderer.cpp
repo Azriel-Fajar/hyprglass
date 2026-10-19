@@ -365,6 +365,7 @@ void blurBackground(Render::CRenderContext& ctx, SP<Render::IFramebuffer> sample
         glDisable(GL_SCISSOR_TEST);
         Diagnostics::recordStateDesync("scissor on before the blur passes");
     }
+    g_pHyprOpenGL->setCapStatus(GL_STENCIL_TEST, false);
     if (glIsEnabled(GL_STENCIL_TEST)) {
         glDisable(GL_STENCIL_TEST);
         Diagnostics::recordStateDesync("stencil on before the blur passes");
@@ -405,8 +406,9 @@ void blurBackground(Render::CRenderContext& ctx, SP<Render::IFramebuffer> sample
         static_cast<int>(callerFramebuffer->m_size.y));
 }
 
-bool buildFrostCopy(const SP<Render::IFramebuffer>& sample, SP<Render::IFramebuffer>& copy, SP<Render::IFramebuffer>& temporary,
-                    float radius, int iterations, const SP<Render::IFramebuffer>& callerFramebuffer) {
+bool buildFrostCopy(Render::CRenderContext& ctx, const SP<Render::IFramebuffer>& sample, SP<Render::IFramebuffer>& copy,
+                    SP<Render::IFramebuffer>& temporary, float radius, int iterations,
+                    const SP<Render::IFramebuffer>& callerFramebuffer) {
     if (!sample || !callerFramebuffer || !g_pGlobalState->shaderManager.isInitialized())
         return false;
 
@@ -435,14 +437,14 @@ bool buildFrostCopy(const SP<Render::IFramebuffer>& sample, SP<Render::IFramebuf
         Diagnostics::recordStateDesync("scissor on before the frost blit");
     }
 
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbId(sample));
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbId(copy));
+    g_pHyprOpenGL->bindFramebuffer(GL_READ_FRAMEBUFFER, fbId(sample));
+    g_pHyprOpenGL->bindFramebuffer(GL_DRAW_FRAMEBUFFER, fbId(copy));
     glBlitFramebuffer(0, 0, sampleWidth, sampleHeight, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
 
-    blurBackground(copy, radius, iterations, callerFramebuffer, &temporary);
+    blurBackground(ctx, copy, radius, iterations, callerFramebuffer, &temporary);
 
     // blurBackground() returns without binding when it has nothing to blur
-    glBindFramebuffer(GL_FRAMEBUFFER, fbId(callerFramebuffer));
+    g_pHyprOpenGL->bindFramebuffer(GL_FRAMEBUFFER, fbId(callerFramebuffer));
     return true;
 }
 
@@ -508,15 +510,15 @@ void applyGlassEffect(Render::CRenderContext& ctx,
     texture->bind();
 
     if (frosted) {
-        glActiveTexture(GL_TEXTURE0 + FROST_TEXTURE_UNIT);
+        g_pHyprOpenGL->setActiveTexture(GL_TEXTURE0 + FROST_TEXTURE_UNIT);
         frost->copy->getTexture()->bind();
-        glActiveTexture(GL_TEXTURE0);
+        g_pHyprOpenGL->setActiveTexture(GL_TEXTURE0);
     }
 
     if (contoured) {
-        glActiveTexture(GL_TEXTURE0 + CONTOUR_TEXTURE_UNIT);
+        g_pHyprOpenGL->setActiveTexture(GL_TEXTURE0 + CONTOUR_TEXTURE_UNIT);
         glBindTexture(GL_TEXTURE_2D, mask->contourTextureId);
-        glActiveTexture(GL_TEXTURE0);
+        g_pHyprOpenGL->setActiveTexture(GL_TEXTURE0);
     }
 
     // Layers only: bind the temp FBO texture (rendered surface) on texture unit 1.
@@ -566,7 +568,7 @@ void applyGlassEffect(Render::CRenderContext& ctx,
         1.0f / static_cast<float>(fullSize.x), 1.0f / static_cast<float>(fullSize.y));
     glUniform1f(uniforms.invRoundingPower, 1.0f / safeRoundingPower);
 
-    const auto  monitor            = g_pHyprRenderer->m_renderData.pMonitor.lock();
+    const auto  monitor            = ctx.m_data.pMonitor.lock();
     const float monitorScale       = monitor && monitor->m_scale > 0.0f ? monitor->m_scale : 1.0f;
     const float edgeThicknessValue = effectiveEdgeThickness(
         resolvePresetFloat(resolveContext, &SPresetValues::edgeThickness, &SOverridableConfig::edgeThickness),
