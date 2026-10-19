@@ -76,6 +76,8 @@ struct SGlobalState {
     std::unordered_map<std::string, ELayerMaskMode> layerNamespaceMaskModes;
     // Per-namespace mask_feather override (namespace → feather)
     std::unordered_map<std::string, float> layerNamespaceMaskFeathers;
+    // Per-namespace fixed glass shape (namespace → shape); absent = the whole layer box
+    std::unordered_map<std::string, SLayerShape> layerNamespaceShapes;
 
     // Per-monitor generation counter, incremented when the scene behind layers
     // changes on that monitor. Layer surfaces compare to their cached value to

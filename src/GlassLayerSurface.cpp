@@ -127,6 +127,17 @@ ELayerMaskMode CGlassLayerSurface::resolveMaskMode() const {
     return ELayerMaskMode::AUTO;
 }
 
+std::optional<SLayerShape> CGlassLayerSurface::resolveShape() const {
+    const auto layerSurface = m_layerSurface.lock();
+    if (!layerSurface)
+        return std::nullopt;
+
+    const auto& shapes = g_pGlobalState->layerNamespaceShapes;
+    if (auto it = shapes.find(layerSurface->m_namespace); it != shapes.end())
+        return it->second;
+    return std::nullopt;
+}
+
 CGlassLayerSurface::EMaskSource CGlassLayerSurface::resolveMaskSource() const {
     const auto layerSurface = m_layerSurface.lock();
     const auto wlSurface    = layerSurface ? layerSurface->wlSurface() : nullptr; // root surface only
@@ -580,6 +591,26 @@ void CGlassLayerSurface::compositeAndRestore(PHLMONITOR monitor, float alpha, EM
         case EMaskSource::NONE:
             // hkRenderLayer takes the plain-renderLayer path for NONE; never reaches here.
             break;
+    }
+
+    // A fixed shape replaces the layer box as the glass outline. The quad stays
+    // the layer box, so content outside the shape is still drawn, without glass.
+    if (const auto shape = resolveShape()) {
+        const double scale = monitor->m_scale;
+        CBox shapeBox{rawBox.x + shape->insetLeft * scale, rawBox.y + shape->insetTop * scale,
+                      rawBox.w - (shape->insetLeft + shape->insetRight) * scale, rawBox.h - (shape->insetTop + shape->insetBottom) * scale};
+        shapeBox.round();
+
+        // insets wider than the layer leave no shape: the whole box keeps its glass
+        if (std::isfinite(shapeBox.x) && std::isfinite(shapeBox.y) && std::isfinite(shapeBox.w) && std::isfinite(shapeBox.h) &&
+            shapeBox.w > 0.0 && shapeBox.h > 0.0) {
+            const float maxRadius = static_cast<float>(std::min(shapeBox.w, shapeBox.h)) / 2.0f;
+            cornerRadius          = shape->radius < 0.0f ? maxRadius : std::min(shape->radius * static_cast<float>(scale), maxRadius);
+
+            const CBox transformedShapeBox = transformedLayerBox(shapeBox, monitor);
+            maskInfo.glassBoxOffsetPx      = Vector2D(transformedShapeBox.x - transformBox.x, transformedShapeBox.y - transformBox.y);
+            maskInfo.glassBoxSizePx        = Vector2D(transformedShapeBox.w, transformedShapeBox.h);
+        }
     }
 
     // A region-mode sample covers only the region's bounding box, smaller than

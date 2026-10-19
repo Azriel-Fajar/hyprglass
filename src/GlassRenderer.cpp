@@ -485,7 +485,7 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     const float safeRoundingPower = std::max(roundingPower, 1.0f);
 
     // The glass shape within the drawn box (see SMaskInfo::glassBoxSizePx): only
-    // subsurface items set one; the sentinel (negative) means the whole box.
+    // subsurface items and shaped layers set one; the sentinel (negative) means the whole box.
     // Bezel, lens and refraction are sized and centred on it, not on the drawn box.
     Vector2D glassBoxOffsetPx{0.0, 0.0};
     Vector2D glassBoxSizePx = fullSize;

@@ -386,6 +386,17 @@ Where the glass goes on a layer:
 
 **Soft edges:** `mask_feather` fades the glass in over that much alpha above `mask_threshold`, so antialiased rounded corners blend instead of stepping. Content fainter than `mask_threshold + mask_feather` then gets lighter glass: keep `0` (default) for near-transparent bars. Only applies where glass follows visible content, not to the region an app requests.
 
+**Fixed shape:** `shape` gives a layer's glass its own rounded box, so a floating bar or a card inside a larger layer gets its own edge, bend and highlights instead of those of the whole layer. `inset` trims the layer's edges (one value, or top, right, bottom, left) and `radius` rounds the corners, `-1` for a pill; both in logical px (up to 16384), and a negative inset reaches past that edge. Content outside the shape is still drawn, without glass. Inside it, `mask_mode` still decides where the glass goes: set the layer's `mask_threshold` to `0` to fill the whole shape.
+
+```ini
+plugin:hyprglass {
+    layers {
+        enabled = 1
+        namespace_shapes = eww-bar=6:-1, quickshell:card=24:0:24:0:16
+    }
+}
+```
+
 #### Lua config
 
 ```lua
@@ -398,6 +409,8 @@ hg.layer("swaync")
 hg.layer("quickshell:bezel", { preset = "ui", mask_threshold = 0.3 })
 hg.layer("quickshell:bar", { mask_mode = "region" })
 hg.layer("dock", { mask_feather = 0.45 })
+hg.layer("eww-bar", { shape = { inset = 6, radius = -1 } })                     -- pill, 6 px inside the layer
+hg.layer("quickshell:card", { shape = { inset = { 24, 0, 24, 0 }, radius = 16 } }) -- top, right, bottom, left
 hg.layer("debug-panel", { exclude = true })
 ```
 
@@ -408,6 +421,7 @@ hg.layer("debug-panel", { exclude = true })
 | `live_resample` | bool | Per-layer override of `layers:live_resample` |
 | `mask_mode` | string | `"auto"`, `"region"` or `"alpha"`. See `layers:mask_mode` |
 | `mask_feather` | float | Per-layer override of `layers:mask_feather` |
+| `shape` | table | Fixed glass shape: `{ inset = px or { top, right, bottom, left }, radius = px }`, both optional (`0`); `radius = -1` = pill. See `layers:namespace_shapes` |
 | `exclude` | bool | Blacklist this namespace instead of whitelisting it |
 
 #### Legacy .conf config
@@ -429,6 +443,7 @@ hg.layer("debug-panel", { exclude = true })
 | `layers:namespace_mask_modes` | string | `""` | Per-namespace `mask_mode` (`ns=mode` pairs, comma-separated) |
 | `layers:mask_feather` | float | `0` | Soft edges: glass fades in over this much alpha above `mask_threshold` (e.g. `0.45` for a rounded dock). `0` = hard edge. Ignored where the app requests a blur region |
 | `layers:namespace_mask_feathers` | string | `""` | Per-namespace `mask_feather` (`ns=value` pairs, comma-separated) |
+| `layers:namespace_shapes` | string | `""` | Per-namespace fixed glass shape (`ns=inset:radius` or `ns=top:right:bottom:left:radius` pairs, comma-separated, logical px). `radius` `-1` = pill. Unset = the whole layer |
 | `layers:manage_blur` | bool | `true` (`1` in .conf) | Replace Hyprland's own blur with glass on glassed layers (`layerrule = ignorealpha` then has no effect, use `mask_threshold`). Set to `0` to keep Hyprland's blur |
 
 > Layer support hooks into Hyprland's internal render pipeline. This is version-sensitive and may break across Hyprland updates.
