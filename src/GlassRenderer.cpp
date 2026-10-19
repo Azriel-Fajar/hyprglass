@@ -19,9 +19,9 @@ static GLuint fbId(const SP<Render::IFramebuffer>& framebuffer) {
     return dynamic_cast<Render::GL::CGLFramebuffer*>(framebuffer.get())->getFBID();
 }
 
-static void uploadThemeUniforms(const SResolveContext& ctx) {
-    const auto& uniforms = g_pGlobalState->shaderManager.glassUniforms;
-    const auto& glassShader = g_pGlobalState->shaderManager.glassShader;
+static void uploadThemeUniforms(const SResolveContext& ctx, const SGlassProgram& program) {
+    const auto& uniforms    = program.uniforms;
+    const auto& glassShader = program.shader;
     const auto& defaults = ctx.isDark ? DARK_THEME_DEFAULTS : LIGHT_THEME_DEFAULTS;
 
     glassShader->setUniformFloat(SHADER_BRIGHTNESS, resolvePresetFloat(ctx, &SPresetValues::brightness, &SOverridableConfig::brightness, defaults.brightness));
@@ -415,6 +415,14 @@ void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, in
         static_cast<int>(callerFramebuffer->m_size.y));
 }
 
+// The optional effects (ShaderVariants.hpp) this draw's resolved settings turn on.
+// Must stay GLASS_FEATURE_NONE whenever every effect is at its off value, so the
+// draw runs the default program.
+static GlassFeatureMask glassFeaturesFor([[maybe_unused]] const SResolveContext& resolveContext,
+                                         [[maybe_unused]] const SMaskInfo* mask) {
+    return GLASS_FEATURE_NONE;
+}
+
 void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFramebuffer> targetFramebuffer,
                        CBox& rawBox, CBox& transformedBox,
                        float alpha, const std::array<float, 4>& radii, float roundingPower,
@@ -428,8 +436,9 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     if (const auto monitor = g_pHyprRenderer->m_renderData.pMonitor.lock())
         Diagnostics::recordGlassPixels(monitor->m_id, rawBox.w * rawBox.h);
 
-    auto& shaderManager  = g_pGlobalState->shaderManager;
-    const auto& uniforms = shaderManager.glassUniforms;
+    // Before any GL binding: a variant's first use compiles it, which rebinds the VAO and array buffer.
+    const auto& program  = g_pGlobalState->shaderManager.glassProgram(glassFeaturesFor(resolveContext, mask));
+    const auto& uniforms = program.uniforms;
 
     const auto transform = Math::wlTransformToHyprutils(
         Math::invertTransform(g_pHyprRenderer->m_renderData.pMonitor->m_transform));
@@ -452,7 +461,7 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
         glActiveTexture(GL_TEXTURE0);
     }
 
-    auto shader = g_pHyprOpenGL->useShader(shaderManager.glassShader);
+    auto shader = g_pHyprOpenGL->useShader(program.shader);
 
     shader->setUniformMatrix3fv(SHADER_PROJ, 1, GL_FALSE, glMatrix.getMatrix());
     shader->setUniformInt(SHADER_TEX, 0);
@@ -521,7 +530,7 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     // bevel width is defined in logical px; scale it to framebuffer px per monitor
     glUniform1f(uniforms.monitorScale, monitorScale);
 
-    uploadThemeUniforms(resolveContext);
+    uploadThemeUniforms(resolveContext, program);
 
     const int64_t tintColorValue = resolvePresetInt(resolveContext, &SPresetValues::tintColor, &SOverridableConfig::tintColor);
     glUniform3f(uniforms.tintColor,

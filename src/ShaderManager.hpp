@@ -1,8 +1,11 @@
 #pragma once
 
+#include "ShaderVariants.hpp"
+
 #include <GLES3/gl32.h>
 #include <hyprland/src/render/Shader.hpp>
 #include <string>
+#include <unordered_map>
 
 struct SGlassUniforms {
     GLint refractionStrength = -1;
@@ -66,17 +69,27 @@ struct SBlurUniforms {
     GLint radius    = -1;
 };
 
+// One compiled variant of the glass program, with the uniform locations of that program.
+struct SGlassProgram {
+    SP<CShader>    shader = makeShared<CShader>();
+    SGlassUniforms uniforms;
+    bool           failed = false; // variants only; m_compileFailed covers the default program
+};
+
 class CShaderManager {
   public:
     [[nodiscard]] bool isInitialized() const noexcept { return m_initialized; }
-    // The last compile attempt failed; it is retried at the next glass draw.
+    // The default glass program or the blur program failed to compile. Not retried
+    // before the plugin is reloaded: every attempt would stall the frame and notify again.
     [[nodiscard]] bool compileFailed() const noexcept { return m_compileFailed; }
 
     void initializeIfNeeded();
     void destroy() noexcept;
 
-    SP<CShader>    glassShader = makeShared<CShader>();
-    SGlassUniforms glassUniforms;
+    // The glass program for a draw using `features`, compiled on its first use. A
+    // variant that fails to compile is reported once, never retried, and the default
+    // program draws in its place. Only call once isInitialized().
+    [[nodiscard]] SGlassProgram& glassProgram(GlassFeatureMask features);
 
     SP<CShader>    blurShader = makeShared<CShader>();
     SBlurUniforms  blurUniforms;
@@ -85,7 +98,10 @@ class CShaderManager {
     bool m_initialized = false;
     bool m_compileFailed = false;
 
+    SGlassProgram                                       m_defaultGlass;
+    std::unordered_map<GlassFeatureMask, SGlassProgram> m_glassVariants;
+
     [[nodiscard]] static std::string loadShaderSource(const char* fileName);
-    [[nodiscard]] bool compileGlassShader();
+    [[nodiscard]] static bool compileGlassProgram(SGlassProgram& program, GlassFeatureMask features);
     [[nodiscard]] bool compileBlurShader();
 };
