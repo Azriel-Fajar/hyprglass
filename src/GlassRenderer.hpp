@@ -69,6 +69,15 @@ static_assert(effectiveEdgeThickness(0.06f, -5.0f, 1.0f, 400.0f) == 0.06f);
 static_assert(effectiveEdgeThickness(0.06f, 12.0f, 1.0f, 0.0f) == 0.06f);
 static_assert(effectiveEdgeThickness(0.06f, 12.0f, 1.0f, -10.0f) == 0.06f);
 
+// edge_height, logical px. Far past any useful wall: it only keeps the shader's
+// products of height and slope finite.
+inline constexpr float EDGE_HEIGHT_MAX = 500.0f;
+
+// How far outside the glass the lens rim's reflection reads, framebuffer px. Inside
+// SAMPLE_PADDING_PX, so it reads sampled backdrop, never the clamped texture border.
+inline constexpr float LENS_REFLECTION_REACH_PX = 0.8f * SAMPLE_PADDING_PX;
+static_assert(LENS_REFLECTION_REACH_PX > 0.0f && LENS_REFLECTION_REACH_PX < SAMPLE_PADDING_PX);
+
 // Must match the `regionRects[64]` array size declared in Shaders.hpp. 64 lets a client trace a
 // rounded shape to within a pixel or two; at 16 a capsule's curve steps by several pixels, and
 // anything the client draws just outside the shape (a glow, a shadow) falls inside the steps.

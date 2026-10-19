@@ -178,6 +178,8 @@ Settings resolve through: **preset chain** (theme variant, shared, inherited) th
 | `glass_opacity` | float | `1.0` | — | — | Overall glass opacity (0.0-1.0) |
 | `edge_thickness` | float | `0.06` | — | — | Bezel width, fraction of smallest dimension (0.0-0.15) |
 | `edge_thickness_px` | float | `0.0` | — | — | Bezel width in logical pixels, the same on every window size and monitor scale. Above `0` it replaces `edge_thickness`, see [Edge thickness in pixels](#edge-thickness-in-pixels) |
+| `edge_height` | float | `0.0` | — | — | Turns the edge into a lens: a narrow, crisp bend with a flat center. Height of the glass edge in logical pixels, `0` keeps the soft edge, see [Lens edge](#lens-edge) (0-60) |
+| `fresnel_reflection` | float | `0.0` | — | — | The lens edge mirrors what is around the glass: 0 none, 1 a mirror. Needs `edge_height` (0.0-1.0) |
 | `tint_color` | color | `0x8899aa22` | — | — | Glass tint RRGGBBAA hex. Alpha = tint strength |
 | `lens_distortion` | float | `0.5` | — | — | Center dome magnification (0.0-1.0) |
 | `self_sample` | float | `0.0` | — | — | Mixes the window's own content into the glass behind it (0.0-1.0). Windows only |
@@ -192,7 +194,7 @@ Settings resolve through: **preset chain** (theme variant, shared, inherited) th
 
 `—` in Global Default = falls through to per-theme default. `—` in Dark/Light = inherits global value.
 
-Ranges in parentheses are the usual span, not limits: only `blur_iterations`, `self_sample` and `edge_thickness_px` (at most half the smaller side) are clamped, and the built-in presets go past some of them (`glass` uses `refraction_strength = 8.0`).
+Ranges in parentheses are the usual span, not limits: only `blur_iterations`, `self_sample`, `fresnel_reflection`, `edge_thickness_px` (at most half the smaller side) and `edge_height` (at most 500) are clamped, and the built-in presets go past some of them (`glass` uses `refraction_strength = 8.0`).
 
 #### Self sampling
 
@@ -303,6 +305,40 @@ preset = name:relative, inherits:glass, edge_thickness_px:0
 
 - Applies to windows, layers and subsurface items
 - Never wider than half the smaller side of the glass: the window, the layer, or a subsurface item's shape
+
+#### Lens edge
+
+`edge_height` turns the soft edge into a lens, like the rim of a thick glass pane: a narrow, crisp bend with a perfectly flat center. It is the height of the glass at the edge, in logical pixels: higher bends more. `0` (default) keeps the soft edge. The lens is as wide as the edge (`edge_thickness`, or `edge_thickness_px` when set).
+
+`fresnel_reflection` makes the lens edge mirror what is around the glass, most where the edge is steepest: `0` none, `1` a mirror. It needs `edge_height` above `0`.
+
+**On the fly:**
+```bash
+hyprctl keyword plugin:hyprglass:edge_height 30
+hyprctl keyword plugin:hyprglass:fresnel_reflection 0.4
+```
+
+**Lua:**
+```lua
+hg.config({ edge_height = 30, edge_thickness_px = 20, fresnel_reflection = 0.4 })
+hg.preset("lens", { inherits = "clear", edge_height = 30, edge_thickness_px = 20 })
+```
+
+**Legacy .conf:**
+```ini
+edge_height = 30
+edge_thickness_px = 20
+fresnel_reflection = 0.4
+preset = name:lens, inherits:clear, edge_height:30, edge_thickness_px:20
+```
+
+- Shows best on clear or lightly blurred glass over busy content (text, other windows); strong blur hides it
+- `refraction_strength` sets how much it bends (`0.6` bends like real glass) and `chromatic_aberration` its rainbow, which shows only where the edge is steep. `refraction_flow` and `refraction_spread` do not apply to it
+- A narrow edge looks best: try `edge_thickness_px` 16-24 with `edge_height` 20-40
+- Square and tight corners bend less than the straight edges
+- Applies to windows, layers and subsurface items
+
+**Cost:** none while `edge_height` is `0`. Above `0`, a little extra GPU work on the edge only.
 
 ### Layer surfaces
 

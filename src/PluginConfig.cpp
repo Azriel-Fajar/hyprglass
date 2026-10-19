@@ -106,6 +106,8 @@ void registerConfig(HANDLE handle) {
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::GLASS_OPACITY, Config::FLOAT{GlobalDefaults::GLASS_OPACITY});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::EDGE_THICKNESS, Config::FLOAT{GlobalDefaults::EDGE_THICKNESS});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::EDGE_THICKNESS_PX, Config::FLOAT{GlobalDefaults::EDGE_THICKNESS_PX});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::EDGE_HEIGHT, Config::FLOAT{GlobalDefaults::EDGE_HEIGHT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::FRESNEL_REFLECTION, Config::FLOAT{GlobalDefaults::FRESNEL_REFLECTION});
     addConfigValue<Config::Values::Int>(handle, ConfigKeys::TINT_COLOR, Config::INTEGER{GlobalDefaults::TINT_COLOR});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LENS_DISTORTION, Config::FLOAT{GlobalDefaults::LENS_DISTORTION});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::BRIGHTNESS, Config::FLOAT{SENTINEL_FLOAT});
@@ -140,6 +142,8 @@ void registerConfig(HANDLE handle) {
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_GLASS_OPACITY, Config::FLOAT{SENTINEL_FLOAT});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_EDGE_THICKNESS, Config::FLOAT{SENTINEL_FLOAT});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_EDGE_THICKNESS_PX, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_EDGE_HEIGHT, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_FRESNEL_REFLECTION, Config::FLOAT{SENTINEL_FLOAT});
     addConfigValue<Config::Values::Int>(handle, ConfigKeys::DARK_TINT_COLOR, Config::INTEGER{SENTINEL_INT});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_LENS_DISTORTION, Config::FLOAT{SENTINEL_FLOAT});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_BRIGHTNESS, Config::FLOAT{SENTINEL_FLOAT});
@@ -174,6 +178,8 @@ void registerConfig(HANDLE handle) {
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_GLASS_OPACITY, Config::FLOAT{SENTINEL_FLOAT});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_EDGE_THICKNESS, Config::FLOAT{SENTINEL_FLOAT});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_EDGE_THICKNESS_PX, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_EDGE_HEIGHT, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_FRESNEL_REFLECTION, Config::FLOAT{SENTINEL_FLOAT});
     addConfigValue<Config::Values::Int>(handle, ConfigKeys::LIGHT_TINT_COLOR, Config::INTEGER{SENTINEL_INT});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_LENS_DISTORTION, Config::FLOAT{SENTINEL_FLOAT});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_BRIGHTNESS, Config::FLOAT{SENTINEL_FLOAT});
@@ -228,6 +234,7 @@ static void initOverridablePointers(HANDLE handle, SOverridableConfig& layer,
                                     const char* specularAngle,
                                     const char* glassOpacity, const char* edgeThickness,
                                     const char* edgeThicknessPx,
+                                    const char* edgeHeight, const char* fresnelReflection,
                                     const char* tintColor, const char* lensDistortion,
                                     const char* brightness, const char* contrast,
                                     const char* saturation, const char* vibrancy,
@@ -250,6 +257,8 @@ static void initOverridablePointers(HANDLE handle, SOverridableConfig& layer,
     layer.glassOpacity        = getStaticPtr<Hyprlang::FLOAT>(handle, glassOpacity);
     layer.edgeThickness       = getStaticPtr<Hyprlang::FLOAT>(handle, edgeThickness);
     layer.edgeThicknessPx     = getStaticPtr<Hyprlang::FLOAT>(handle, edgeThicknessPx);
+    layer.edgeHeight          = getStaticPtr<Hyprlang::FLOAT>(handle, edgeHeight);
+    layer.fresnelReflection   = getStaticPtr<Hyprlang::FLOAT>(handle, fresnelReflection);
     layer.tintColor           = getStaticPtr<Hyprlang::INT>(handle, tintColor);
     layer.lensDistortion      = getStaticPtr<Hyprlang::FLOAT>(handle, lensDistortion);
     layer.brightness          = getStaticPtr<Hyprlang::FLOAT>(handle, brightness);
@@ -317,6 +326,7 @@ void initConfigPointers(HANDLE handle, SPluginConfig& config) {
         ConfigKeys::SPECULAR_ANGLE,
         ConfigKeys::GLASS_OPACITY, ConfigKeys::EDGE_THICKNESS,
         ConfigKeys::EDGE_THICKNESS_PX,
+        ConfigKeys::EDGE_HEIGHT, ConfigKeys::FRESNEL_REFLECTION,
         ConfigKeys::TINT_COLOR, ConfigKeys::LENS_DISTORTION,
         ConfigKeys::BRIGHTNESS, ConfigKeys::CONTRAST,
         ConfigKeys::SATURATION, ConfigKeys::VIBRANCY,
@@ -336,6 +346,7 @@ void initConfigPointers(HANDLE handle, SPluginConfig& config) {
         ConfigKeys::DARK_SPECULAR_ANGLE,
         ConfigKeys::DARK_GLASS_OPACITY, ConfigKeys::DARK_EDGE_THICKNESS,
         ConfigKeys::DARK_EDGE_THICKNESS_PX,
+        ConfigKeys::DARK_EDGE_HEIGHT, ConfigKeys::DARK_FRESNEL_REFLECTION,
         ConfigKeys::DARK_TINT_COLOR, ConfigKeys::DARK_LENS_DISTORTION,
         ConfigKeys::DARK_BRIGHTNESS, ConfigKeys::DARK_CONTRAST,
         ConfigKeys::DARK_SATURATION, ConfigKeys::DARK_VIBRANCY,
@@ -355,6 +366,7 @@ void initConfigPointers(HANDLE handle, SPluginConfig& config) {
         ConfigKeys::LIGHT_SPECULAR_ANGLE,
         ConfigKeys::LIGHT_GLASS_OPACITY, ConfigKeys::LIGHT_EDGE_THICKNESS,
         ConfigKeys::LIGHT_EDGE_THICKNESS_PX,
+        ConfigKeys::LIGHT_EDGE_HEIGHT, ConfigKeys::LIGHT_FRESNEL_REFLECTION,
         ConfigKeys::LIGHT_TINT_COLOR, ConfigKeys::LIGHT_LENS_DISTORTION,
         ConfigKeys::LIGHT_BRIGHTNESS, ConfigKeys::LIGHT_CONTRAST,
         ConfigKeys::LIGHT_SATURATION, ConfigKeys::LIGHT_VIBRANCY,
@@ -394,6 +406,8 @@ static bool setPresetFloatField(SPresetValues& values, std::string_view key, std
     if (key == "glass_opacity")        { values.glassOpacity = parsed; return true; }
     if (key == "edge_thickness")       { values.edgeThickness = parsed; return true; }
     if (key == "edge_thickness_px")    { values.edgeThicknessPx = parsed; return true; }
+    if (key == "edge_height")          { values.edgeHeight = parsed; return true; }
+    if (key == "fresnel_reflection")   { values.fresnelReflection = parsed; return true; }
     if (key == "lens_distortion")      { values.lensDistortion = parsed; return true; }
     if (key == "brightness")           { values.brightness = parsed; return true; }
     if (key == "contrast")             { values.contrast = parsed; return true; }
@@ -455,6 +469,8 @@ static void mergePresetValues(SPresetValues& target, const SPresetValues& overri
     mergeFloat(target.glassOpacity, overrides.glassOpacity);
     mergeFloat(target.edgeThickness, overrides.edgeThickness);
     mergeFloat(target.edgeThicknessPx, overrides.edgeThicknessPx);
+    mergeFloat(target.edgeHeight, overrides.edgeHeight);
+    mergeFloat(target.fresnelReflection, overrides.fresnelReflection);
     mergeInt(target.tintColor, overrides.tintColor);
     mergeFloat(target.lensDistortion, overrides.lensDistortion);
     mergeFloat(target.brightness, overrides.brightness);

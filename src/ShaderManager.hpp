@@ -62,6 +62,11 @@ struct SGlassUniforms {
     GLint glassBoxSizePx = -1;
     GLint glassUVScale = -1;
     GLint glassUVOffset = -1;
+
+    // GLASS_FEATURE_LENS_EDGE variant only; -1 (uploads ignored) in every other program.
+    GLint lensHeightPx = -1;
+    GLint lensReflection = -1;
+    GLint lensReflectionReachPx = -1;
 };
 
 struct SBlurUniforms {
