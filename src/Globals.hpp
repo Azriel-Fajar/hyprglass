@@ -154,6 +154,10 @@ struct SGlobalState {
 
     // Pending re-enable of Hyprland shadows after a config reload (see main.cpp)
     UP<SEventLoopDoLaterLock> shadowFixLock;
+    // One timer for every resample the live_resample_fps limit deferred (see
+    // BackgroundDamageObserver). Hyprland's timer list holds its own reference,
+    // so it must be removed from it, not just dropped, before the plugin unloads.
+    SP<CEventLoopTimer> deferredResampleTimer;
     // X-ray: per-monitor copy of the frame as it stood before any window was
     // drawn, kept by CGlassSnapshotElement (see GlassSnapshotElement.hpp).
     struct SBackgroundSnapshot {

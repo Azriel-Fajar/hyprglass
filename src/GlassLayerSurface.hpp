@@ -4,6 +4,7 @@
 #include "PluginConfig.hpp"
 
 #include <chrono>
+#include <optional>
 #include <hyprland/src/desktop/view/LayerSurface.hpp>
 #include <hyprland/src/render/Framebuffer.hpp>
 #include <hyprutils/math/Region.hpp>
@@ -33,6 +34,10 @@ class CGlassLayerSurface {
 
     // Content below committed damage in our sample region — resample next frame
     void markBackgroundDirty();
+
+    // Applies a mark markBackgroundDirty() owed under the rate limit once its
+    // deadline passed, or re-arms the shared timer for it.
+    void flushDeferredResample(std::chrono::steady_clock::time_point now);
 
     [[nodiscard]] bool liveResampleEnabled() const;
 
@@ -66,6 +71,8 @@ class CGlassLayerSurface {
     bool         m_hasCachedSample = false;
     bool         m_backgroundDirty = false;
     std::chrono::steady_clock::time_point m_lastDirtyMark{};
+    // A mark the rate limit held back: the last change of a burst must still land.
+    std::optional<std::chrono::steady_clock::time_point> m_deferredResampleAt;
 
     // Set at the end of sampleAndRedirect() when currentFB was actually redirected
     // to the temp FBO this frame, cleared by compositeAndRestore() after it reads it.
@@ -96,9 +103,11 @@ class CGlassLayerSurface {
     // shouldn't be (mask source disagreeing between the two calls in one frame).
     CRegion      m_cachedTransformedRegion;
 
-    // Region bounding box computed by sampleAndRedirect() this frame (same
-    // coordinate space as m_cachedTransformedRegion's extents, PROTOCOL_REGION
-    // only, nullopt otherwise). Reused by compositeAndRestore() to build the
+    // Region bounding box the cached sample texture was taken from (same
+    // coordinate space as m_cachedTransformedRegion's extents; nullopt = the
+    // texture covers the full layer box). Written only when sampleAndRedirect()
+    // actually samples, never on a deferred or cache-hit frame, so it always
+    // describes m_sampleFramebuffer. Reused by compositeAndRestore() to build the
     // sampleUVOffset/uvScale mask uniforms that reconcile sampleBackground()'s
     // region-shrunk sample box against the full-layer quad UV (see
     // toSampleBoxUV() in Shaders.hpp) — without this, sampleBlurred() would

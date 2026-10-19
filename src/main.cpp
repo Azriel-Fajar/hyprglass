@@ -22,6 +22,7 @@
 #include <hyprland/src/state/WorkspaceState.hpp>
 #include <hyprland/src/desktop/view/WLSurface.hpp>
 #include <hyprland/src/helpers/time/Time.hpp>
+#include <hyprland/src/managers/SessionLockManager.hpp>
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/render/Renderer.hpp>
@@ -401,6 +402,21 @@ static void refreshSurfaceObserver() {
 
 using renderLayerFn = void (*)(Render::IHyprRenderer*, PHLLS, PHLMONITOR, const Time::steady_tp&, bool, bool);
 
+// Mirrors renderLayer()'s abovelock early-out: while locked, every layer is
+// offered twice per frame (workspace pass, then the lockscreen pass) and
+// Hyprland draws it in only one of them. Glass queued for the other has no
+// surface over it: region-mode glass would then paint over the lock screen.
+static bool layerSkippedForLock(const PHLLS& layerSurface, bool lockscreen) {
+    if (!layerSurface)
+        return true;
+
+    const bool aboveLock = layerSurface->m_ruleApplicator->aboveLock().valueOrDefault();
+    if (lockscreen)
+        return !aboveLock;
+
+    return aboveLock && g_pSessionLockManager && g_pSessionLockManager->isSessionLocked();
+}
+
 static void hkRenderLayer(Render::IHyprRenderer* thisptr, PHLLS layerSurface, PHLMONITOR monitor,
                            const Time::steady_tp& now, bool popups, bool lockscreen) {
     const auto& config = g_pGlobalState->config;
@@ -423,6 +439,11 @@ static void hkRenderLayer(Render::IHyprRenderer* thisptr, PHLLS layerSurface, PH
     // no layer registration. Its framebuffer holds content the real frame must not
     // inherit, and its geometry is not the one our caches are keyed on.
     if (RenderGuards::isForeignRender()) {
+        ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, layerSurface, monitor, now, popups, lockscreen);
+        return;
+    }
+
+    if (layerSkippedForLock(layerSurface, lockscreen)) {
         ((renderLayerFn)g_pGlobalState->renderLayerHook->m_original)(thisptr, layerSurface, monitor, now, popups, lockscreen);
         return;
     }
