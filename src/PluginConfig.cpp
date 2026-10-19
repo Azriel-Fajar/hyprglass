@@ -129,6 +129,8 @@ void registerConfig(HANDLE handle) {
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::BEVEL_SHADOW, Config::FLOAT{GlobalDefaults::BEVEL_SHADOW});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::SELF_SAMPLE, Config::FLOAT{GlobalDefaults::SELF_SAMPLE});
     addConfigValue<Config::Values::Int>(handle, ConfigKeys::XRAY, Config::INTEGER{GlobalDefaults::XRAY});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::FOCUS_LIGHT, Config::FLOAT{GlobalDefaults::FOCUS_LIGHT});
+    addConfigValue<Config::Values::Int>(handle, ConfigKeys::FOCUS_LIGHT_COLOR, Config::INTEGER{GlobalDefaults::FOCUS_LIGHT_COLOR});
 
     // Dark theme overrides — all sentinel (inherit from global)
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_BLUR_STRENGTH, Config::FLOAT{SENTINEL_FLOAT});
@@ -165,6 +167,8 @@ void registerConfig(HANDLE handle) {
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_BEVEL_SHADOW, Config::FLOAT{SENTINEL_FLOAT});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_SELF_SAMPLE, Config::FLOAT{SENTINEL_FLOAT});
     addConfigValue<Config::Values::Int>(handle, ConfigKeys::DARK_XRAY, Config::INTEGER{SENTINEL_INT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::DARK_FOCUS_LIGHT, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Int>(handle, ConfigKeys::DARK_FOCUS_LIGHT_COLOR, Config::INTEGER{SENTINEL_INT});
 
     // Light theme overrides — all sentinel (inherit from global)
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_BLUR_STRENGTH, Config::FLOAT{SENTINEL_FLOAT});
@@ -201,6 +205,8 @@ void registerConfig(HANDLE handle) {
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_BEVEL_SHADOW, Config::FLOAT{SENTINEL_FLOAT});
     addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_SELF_SAMPLE, Config::FLOAT{SENTINEL_FLOAT});
     addConfigValue<Config::Values::Int>(handle, ConfigKeys::LIGHT_XRAY, Config::INTEGER{SENTINEL_INT});
+    addConfigValue<Config::Values::Float>(handle, ConfigKeys::LIGHT_FOCUS_LIGHT, Config::FLOAT{SENTINEL_FLOAT});
+    addConfigValue<Config::Values::Int>(handle, ConfigKeys::LIGHT_FOCUS_LIGHT_COLOR, Config::INTEGER{SENTINEL_INT});
 
     // Legacy config keyword plus Lua-config callbacks for custom presets and layers.
     HyprlandAPI::addConfigKeyword(handle, ConfigKeys::PRESET_KEYWORD, handlePresetKeyword, Hyprlang::SHandlerOptions{});
@@ -245,7 +251,8 @@ static void initOverridablePointers(HANDLE handle, SOverridableConfig& layer,
                                     const char* bevelSize, const char* fresnelColor,
                                     const char* bevelColor, const char* bevelTint,
                                     const char* bevelAngle, const char* bevelShadow,
-                                    const char* selfSample, const char* xray) {
+                                    const char* selfSample, const char* xray,
+                                    const char* focusLight, const char* focusLightColor) {
     layer.blurStrength        = getStaticPtr<Hyprlang::FLOAT>(handle, blurStrength);
     layer.blurIterations      = getStaticPtr<Hyprlang::INT>(handle, blurIterations);
     layer.noiseStrength       = getStaticPtr<Hyprlang::FLOAT>(handle, noiseStrength);
@@ -280,6 +287,8 @@ static void initOverridablePointers(HANDLE handle, SOverridableConfig& layer,
     layer.bevelShadow         = getStaticPtr<Hyprlang::FLOAT>(handle, bevelShadow);
     layer.selfSample          = getStaticPtr<Hyprlang::FLOAT>(handle, selfSample);
     layer.xray                = getStaticPtr<Hyprlang::INT>(handle, xray);
+    layer.focusLight          = getStaticPtr<Hyprlang::FLOAT>(handle, focusLight);
+    layer.focusLightColor     = getStaticPtr<Hyprlang::INT>(handle, focusLightColor);
 }
 
 void initConfigPointers(HANDLE handle, SPluginConfig& config) {
@@ -288,6 +297,7 @@ void initConfigPointers(HANDLE handle, SPluginConfig& config) {
     config.skipOpaqueWindows = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::SKIP_OPAQUE_WINDOWS);
     config.blurFold          = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::BLUR_FOLD);
     config.xpMode            = getIntegerPtr(handle, "render:xp_mode");
+    config.animationsEnabled = getIntegerPtr(handle, "animations:enabled");
     config.defaultTheme  = getStringPtr(handle, ConfigKeys::DEFAULT_THEME);
     config.defaultPreset = getStringPtr(handle, ConfigKeys::DEFAULT_PRESET);
 
@@ -337,7 +347,8 @@ void initConfigPointers(HANDLE handle, SPluginConfig& config) {
         ConfigKeys::BEVEL_SIZE, ConfigKeys::FRESNEL_COLOR,
         ConfigKeys::BEVEL_COLOR, ConfigKeys::BEVEL_TINT,
         ConfigKeys::BEVEL_ANGLE, ConfigKeys::BEVEL_SHADOW,
-        ConfigKeys::SELF_SAMPLE, ConfigKeys::XRAY);
+        ConfigKeys::SELF_SAMPLE, ConfigKeys::XRAY,
+        ConfigKeys::FOCUS_LIGHT, ConfigKeys::FOCUS_LIGHT_COLOR);
 
     initOverridablePointers(handle, config.dark,
         ConfigKeys::DARK_BLUR_STRENGTH, ConfigKeys::DARK_BLUR_ITERATIONS, ConfigKeys::DARK_NOISE_STRENGTH,
@@ -357,7 +368,8 @@ void initConfigPointers(HANDLE handle, SPluginConfig& config) {
         ConfigKeys::DARK_BEVEL_SIZE, ConfigKeys::DARK_FRESNEL_COLOR,
         ConfigKeys::DARK_BEVEL_COLOR, ConfigKeys::DARK_BEVEL_TINT,
         ConfigKeys::DARK_BEVEL_ANGLE, ConfigKeys::DARK_BEVEL_SHADOW,
-        ConfigKeys::DARK_SELF_SAMPLE, ConfigKeys::DARK_XRAY);
+        ConfigKeys::DARK_SELF_SAMPLE, ConfigKeys::DARK_XRAY,
+        ConfigKeys::DARK_FOCUS_LIGHT, ConfigKeys::DARK_FOCUS_LIGHT_COLOR);
 
     initOverridablePointers(handle, config.light,
         ConfigKeys::LIGHT_BLUR_STRENGTH, ConfigKeys::LIGHT_BLUR_ITERATIONS, ConfigKeys::LIGHT_NOISE_STRENGTH,
@@ -377,7 +389,8 @@ void initConfigPointers(HANDLE handle, SPluginConfig& config) {
         ConfigKeys::LIGHT_BEVEL_SIZE, ConfigKeys::LIGHT_FRESNEL_COLOR,
         ConfigKeys::LIGHT_BEVEL_COLOR, ConfigKeys::LIGHT_BEVEL_TINT,
         ConfigKeys::LIGHT_BEVEL_ANGLE, ConfigKeys::LIGHT_BEVEL_SHADOW,
-        ConfigKeys::LIGHT_SELF_SAMPLE, ConfigKeys::LIGHT_XRAY);
+        ConfigKeys::LIGHT_SELF_SAMPLE, ConfigKeys::LIGHT_XRAY,
+        ConfigKeys::LIGHT_FOCUS_LIGHT, ConfigKeys::LIGHT_FOCUS_LIGHT_COLOR);
 }
 
 // ── Preset keyword parsing ───────────────────────────────────────────────────
@@ -425,6 +438,7 @@ static bool setPresetFloatField(SPresetValues& values, std::string_view key, std
     if (key == "bevel_angle")          { values.bevelAngle = parsed; return true; }
     if (key == "bevel_shadow")         { values.bevelShadow = parsed; return true; }
     if (key == "self_sample")          { values.selfSample = parsed; return true; }
+    if (key == "focus_light")          { values.focusLight = parsed; return true; }
     return false;
 }
 
@@ -447,6 +461,7 @@ static bool setPresetIntField(SPresetValues& values, std::string_view key, std::
     if (key == "fresnel_color")   { values.fresnelColor = parsed; return true; }
     if (key == "bevel_color")     { values.bevelColor = parsed; return true; }
     if (key == "xray")            { values.xray = parsed; return true; }
+    if (key == "focus_light_color") { values.focusLightColor = parsed; return true; }
     return false;
 }
 
@@ -492,6 +507,8 @@ static void mergePresetValues(SPresetValues& target, const SPresetValues& overri
     mergeFloat(target.bevelShadow, overrides.bevelShadow);
     mergeFloat(target.selfSample, overrides.selfSample);
     mergeInt(target.xray, overrides.xray);
+    mergeFloat(target.focusLight, overrides.focusLight);
+    mergeInt(target.focusLightColor, overrides.focusLightColor);
 }
 
 Hyprlang::CParseResult handlePresetKeyword(const char* /*command*/, const char* value) {

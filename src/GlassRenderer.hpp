@@ -169,10 +169,13 @@ void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, in
 // Windows and layers pass the same value four times — see CGlassDecoration::
 // renderPass() and CGlassLayerSurface::compositeAndRestore(); only subsurface
 // item glass (CGlassSubsurfaceState) ever passes unequal corners.
+//
+// focusLight: brightness of the light along the edge, 0..1 (focus_light times
+// its fade). Only the active window's glass passes one above 0.
 void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFramebuffer> targetFramebuffer,
                        CBox& rawBox, CBox& transformedBox,
                        float alpha, const std::array<float, 4>& radii, float roundingPower,
                        const Vector2D& paddingRatio, const SResolveContext& resolveContext,
-                       const SMaskInfo* mask = nullptr);
+                       const SMaskInfo* mask = nullptr, float focusLight = 0.0f);
 
 } // namespace GlassRenderer

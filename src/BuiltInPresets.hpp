@@ -54,6 +54,8 @@ namespace GlobalDefaults {
     inline constexpr float   SPECULAR_ANGLE       = 0.0f;
     inline constexpr float   SELF_SAMPLE          = 0.0f;
     inline constexpr int64_t XRAY                 = 0;
+    inline constexpr float   FOCUS_LIGHT          = 0.0f; // 0 = no light on the active window
+    inline constexpr int64_t FOCUS_LIGHT_COLOR    = 0xffffff00;
 } // namespace GlobalDefaults
 
 // ── Built-in presets ─────────────────────────────────────────────────────────

@@ -806,7 +806,14 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         if (w) if (auto mon = w->m_monitor.lock()) g_pGlobalState->bumpSceneGeneration(mon);
     };
     g_pGlobalState->listeners.push_back(Event::bus()->m_events.window.active.listen(
-        [=](PHLWINDOW w, Desktop::eFocusReason) { bumpWindowMonitor(w); }));
+        [=](PHLWINDOW w, Desktop::eFocusReason) {
+            bumpWindowMonitor(w);
+            // the window losing focus is not named: every decoration checks
+            for (const auto& decoration : g_pGlobalState->decorations) {
+                if (auto* deco = decoration.get())
+                    deco->onActiveWindowChanged(w);
+            }
+        }));
     g_pGlobalState->listeners.push_back(Event::bus()->m_events.window.fullscreen.listen(
         [=](PHLWINDOW w) {
             bumpWindowMonitor(w);

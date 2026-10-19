@@ -83,6 +83,9 @@ bool CShaderManager::compileGlassProgram(SGlassProgram& glass, GlassFeatureMask 
     glassUniforms.lensHeightPx          = glGetUniformLocation(program, "lensHeightPx");
     glassUniforms.lensReflection        = glGetUniformLocation(program, "lensReflection");
     glassUniforms.lensReflectionReachPx = glGetUniformLocation(program, "lensReflectionReachPx");
+    glassUniforms.focusLight            = glGetUniformLocation(program, "focusLight");
+    glassUniforms.focusLightColor       = glGetUniformLocation(program, "focusLightColor");
+    glassUniforms.focusLightColorAlpha  = glGetUniformLocation(program, "focusLightColorAlpha");
 
     return true;
 }
