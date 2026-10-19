@@ -419,10 +419,12 @@ void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, in
 // The optional effects (ShaderVariants.hpp) this draw's resolved settings turn on.
 // Must stay GLASS_FEATURE_NONE whenever every effect is at its off value, so the
 // draw runs the default program.
-static GlassFeatureMask glassFeaturesFor(float edgeHeight) {
+static GlassFeatureMask glassFeaturesFor(float edgeHeight, float focusLight) {
     GlassFeatureMask features = GLASS_FEATURE_NONE;
     if (edgeHeight > 0.0f)
         features |= GLASS_FEATURE_LENS_EDGE;
+    if (focusLight > 0.0f)
+        features |= GLASS_FEATURE_FOCUS_LIGHT;
     return features;
 }
 
@@ -430,7 +432,7 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
                        CBox& rawBox, CBox& transformedBox,
                        float alpha, const std::array<float, 4>& radii, float roundingPower,
                        const Vector2D& paddingRatio, const SResolveContext& resolveContext,
-                       const SMaskInfo* mask) {
+                       const SMaskInfo* mask, float focusLight) {
     if (!sampleFramebuffer || !targetFramebuffer)
         return;
 
@@ -441,7 +443,9 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
 
     const float edgeHeightValue =
         std::min(resolvePresetFloat(resolveContext, &SPresetValues::edgeHeight, &SOverridableConfig::edgeHeight), EDGE_HEIGHT_MAX);
-    const auto features = glassFeaturesFor(edgeHeightValue);
+    // windows only: a masked draw is a layer or an item
+    const float focusLightValue = !mask && focusLight > 0.0f ? std::min(focusLight, 1.0f) : 0.0f;
+    const auto  features        = glassFeaturesFor(edgeHeightValue, focusLightValue);
 
     // Before any GL binding: a variant's first use compiles it, which rebinds the VAO and array buffer.
     const auto& program  = g_pGlobalState->shaderManager.glassProgram(features);
@@ -545,6 +549,18 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
         glUniform1f(uniforms.lensHeightPx, edgeHeightValue * monitorScale);
         glUniform1f(uniforms.lensReflection, reflection > 0.0f ? std::min(reflection, 1.0f) : 0.0f);
         glUniform1f(uniforms.lensReflectionReachPx, LENS_REFLECTION_REACH_PX);
+    }
+
+    if (features & GLASS_FEATURE_FOCUS_LIGHT) {
+        const int64_t focusLightColorValue =
+            resolvePresetInt(resolveContext, &SPresetValues::focusLightColor, &SOverridableConfig::focusLightColor);
+        glUniform1f(uniforms.focusLight, focusLightValue);
+        glUniform3f(uniforms.focusLightColor,
+            static_cast<float>((focusLightColorValue >> 24) & 0xFF) / 255.0f,
+            static_cast<float>((focusLightColorValue >> 16) & 0xFF) / 255.0f,
+            static_cast<float>((focusLightColorValue >> 8) & 0xFF) / 255.0f);
+        glUniform1f(uniforms.focusLightColorAlpha,
+            static_cast<float>(focusLightColorValue & 0xFF) / 255.0f);
     }
 
     uploadThemeUniforms(resolveContext, program);

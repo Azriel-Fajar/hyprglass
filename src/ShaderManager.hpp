@@ -67,6 +67,11 @@ struct SGlassUniforms {
     GLint lensHeightPx = -1;
     GLint lensReflection = -1;
     GLint lensReflectionReachPx = -1;
+
+    // GLASS_FEATURE_FOCUS_LIGHT variant only.
+    GLint focusLight = -1;
+    GLint focusLightColor = -1;
+    GLint focusLightColorAlpha = -1;
 };
 
 struct SBlurUniforms {

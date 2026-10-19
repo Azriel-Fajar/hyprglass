@@ -109,6 +109,8 @@ inline constexpr auto BEVEL_ANGLE           = "plugin:hyprglass:bevel_angle";
 inline constexpr auto BEVEL_SHADOW          = "plugin:hyprglass:bevel_shadow";
 inline constexpr auto SELF_SAMPLE           = "plugin:hyprglass:self_sample";
 inline constexpr auto XRAY                  = "plugin:hyprglass:xray";
+inline constexpr auto FOCUS_LIGHT           = "plugin:hyprglass:focus_light";
+inline constexpr auto FOCUS_LIGHT_COLOR     = "plugin:hyprglass:focus_light_color";
 
 // Layer surface support
 inline constexpr auto LAYERS_ENABLED            = "plugin:hyprglass:layers:enabled";
@@ -180,6 +182,8 @@ inline constexpr auto DARK_BEVEL_ANGLE          = "plugin:hyprglass:dark:bevel_a
 inline constexpr auto DARK_BEVEL_SHADOW         = "plugin:hyprglass:dark:bevel_shadow";
 inline constexpr auto DARK_SELF_SAMPLE          = "plugin:hyprglass:dark:self_sample";
 inline constexpr auto DARK_XRAY                 = "plugin:hyprglass:dark:xray";
+inline constexpr auto DARK_FOCUS_LIGHT          = "plugin:hyprglass:dark:focus_light";
+inline constexpr auto DARK_FOCUS_LIGHT_COLOR    = "plugin:hyprglass:dark:focus_light_color";
 
 // Overridable — light theme overrides
 inline constexpr auto LIGHT_BLUR_STRENGTH        = "plugin:hyprglass:light:blur_strength";
@@ -216,6 +220,8 @@ inline constexpr auto LIGHT_BEVEL_ANGLE          = "plugin:hyprglass:light:bevel
 inline constexpr auto LIGHT_BEVEL_SHADOW         = "plugin:hyprglass:light:bevel_shadow";
 inline constexpr auto LIGHT_SELF_SAMPLE          = "plugin:hyprglass:light:self_sample";
 inline constexpr auto LIGHT_XRAY                 = "plugin:hyprglass:light:xray";
+inline constexpr auto LIGHT_FOCUS_LIGHT          = "plugin:hyprglass:light:focus_light";
+inline constexpr auto LIGHT_FOCUS_LIGHT_COLOR    = "plugin:hyprglass:light:focus_light_color";
 
 } // namespace ConfigKeys
 
@@ -255,6 +261,8 @@ struct SOverridableConfig {
     Hyprlang::FLOAT* const* bevelShadow         = nullptr;
     Hyprlang::FLOAT* const* selfSample          = nullptr;
     Hyprlang::INT* const*   xray                = nullptr;
+    Hyprlang::FLOAT* const* focusLight          = nullptr;
+    Hyprlang::INT* const*   focusLightColor     = nullptr;
 };
 
 // Plain values for a user-defined preset layer (all sentinel = not set → inherit)
@@ -293,6 +301,8 @@ struct SPresetValues {
     float   bevelShadow        = static_cast<float>(SENTINEL_FLOAT);
     float   selfSample         = static_cast<float>(SENTINEL_FLOAT);
     int64_t xray               = SENTINEL_INT;
+    float   focusLight         = static_cast<float>(SENTINEL_FLOAT);
+    int64_t focusLightColor    = SENTINEL_INT;
 };
 
 struct SCustomPreset {
@@ -361,6 +371,8 @@ struct SPluginConfig {
     // Hyprland's render:xp_mode: no wallpaper or bottom layers are drawn, so
     // there is nothing for x-ray to show.
     IntegerConfigPtr      xpMode;
+    // Hyprland's animations:enabled: off, the focus light switches without a fade.
+    IntegerConfigPtr      animationsEnabled;
     StringConfigPtr      defaultTheme;
     StringConfigPtr      defaultPreset;
 

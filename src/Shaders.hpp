@@ -116,6 +116,20 @@ const float LENS_DISPERSION = 0.25;
 const float LENS_REFERENCE_STRENGTH = 0.6;
 #endif
 
+#ifdef HYPRGLASS_FEATURE_FOCUS_LIGHT
+uniform float focusLight;           // focus_light times the focus fade, > 0
+uniform vec3  focusLightColor;
+uniform float focusLightColorAlpha;
+
+// Logical px, so the light looks the same on every monitor scale.
+const float FOCUS_LIGHT_LINE_DEPTH = 1.0;  // the bright line peaks this far in from the edge
+const float FOCUS_LIGHT_LINE_WIDTH = 1.0;
+const float FOCUS_LIGHT_SHEEN_FALLOFF = 4.0; // the soft sheen inside it fades out over ~3 of these
+const float FOCUS_LIGHT_SHEEN = 0.3;       // sheen brightness, relative to the line
+const float FOCUS_LIGHT_FLOOR = 0.5;       // the side facing away from bevel_angle keeps this much
+const float FOCUS_LIGHT_REACH = 24.0;      // deeper, the light is under a third of a colour step: skipped
+#endif
+
 in vec2 v_texcoord;
 layout(location = 0) out vec4 fragColor;
 
@@ -629,6 +643,30 @@ void main() {
         float shadow = bottomBias * edgeProximity * edgeProximity * 0.06;
         color *= 1.0 - shadow;
     }
+
+#ifdef HYPRGLASS_FEATURE_FOCUS_LIGHT
+    // ========================================
+    // FOCUS LIGHT — the active window's edge lit all the way round: a bright
+    // line just inside the edge over a soft sheen, brightest on the side the
+    // bevel light comes from. Last, so the inner shadow does not dim it.
+    // ========================================
+    float depthLogical = max(-bevelSdf, 0.0) / max(monitorScale, 0.001);
+    if (depthLogical < FOCUS_LIGHT_REACH) {
+        float lineT = (depthLogical - FOCUS_LIGHT_LINE_DEPTH) / FOCUS_LIGHT_LINE_WIDTH;
+        float profile = exp(-lineT * lineT) + FOCUS_LIGHT_SHEEN * exp(-depthLogical / FOCUS_LIGHT_SHEEN_FALLOFF);
+
+        // outward normal of the same crease-free distance, so the corners light without a seam
+        float sdfRight = roundingPower == 2.0 ? getBevelSDF(uv + vec2(invFullSize.x, 0.0)) : getCornerSDF(uv + vec2(invFullSize.x, 0.0));
+        float sdfDown  = roundingPower == 2.0 ? getBevelSDF(uv + vec2(0.0, invFullSize.y)) : getCornerSDF(uv + vec2(0.0, invFullSize.y));
+        vec2  grad     = vec2(sdfRight - bevelSdf, sdfDown - bevelSdf);
+        float gradLen  = length(grad);
+        vec2  outward  = gradLen > 1e-4 ? grad / gradLen : vec2(0.0, -1.0);
+        float facing   = clamp(dot(outward, lightDir(bevelAngle)) * 0.5 + 0.5, 0.0, 1.0);
+
+        vec3 light = focusLightColorAlpha > 0.001 ? mix(vec3(1.0), focusLightColor, focusLightColorAlpha) : vec3(1.0);
+        color = mix(color, light, clamp(focusLight * mix(FOCUS_LIGHT_FLOOR, 1.0, facing) * profile, 0.0, 1.0));
+    }
+#endif
 
     // float framebuffers (FP16 under wide-gamut cm) store unbounded values and
     // the glass re-samples its own output: unclamped color diverges over frames

@@ -16,6 +16,8 @@ using GlassFeatureMask = uint32_t;
 inline constexpr GlassFeatureMask GLASS_FEATURE_NONE = 0;
 // edge_height > 0: the rim is a lens that refracts (and can mirror) what is around it.
 inline constexpr GlassFeatureMask GLASS_FEATURE_LENS_EDGE = 1u << 0;
+// focus_light > 0 on the active window: a light along its glass edge.
+inline constexpr GlassFeatureMask GLASS_FEATURE_FOCUS_LIGHT = 1u << 1;
 
 struct SGlassFeatureDefine {
     GlassFeatureMask bit;
@@ -25,6 +27,7 @@ struct SGlassFeatureDefine {
 // One entry per feature bit.
 inline constexpr std::array GLASS_FEATURE_DEFINES{
     SGlassFeatureDefine{GLASS_FEATURE_LENS_EDGE, "HYPRGLASS_FEATURE_LENS_EDGE"},
+    SGlassFeatureDefine{GLASS_FEATURE_FOCUS_LIGHT, "HYPRGLASS_FEATURE_FOCUS_LIGHT"},
 };
 
 [[nodiscard]] consteval GlassFeatureMask allGlassFeatures() {

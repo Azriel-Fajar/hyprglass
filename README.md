@@ -184,6 +184,8 @@ Settings resolve through: **preset chain** (theme variant, shared, inherited) th
 | `lens_distortion` | float | `0.5` | — | — | Center dome magnification (0.0-1.0) |
 | `self_sample` | float | `0.0` | — | — | Mixes the window's own content into the glass behind it (0.0-1.0). Windows only |
 | `xray` | int | `0` | — | — | `1` hides the windows under the glass: only the wallpaper shows through. See [X-ray](#x-ray) |
+| `focus_light` | float | `0.0` | — | — | Light along the glass edge of the active window, `0` off. See [Focus light](#focus-light) (0.0-1.0). Windows only |
+| `focus_light_color` | color | `0xffffff00` | — | — | Color of the focus light; alpha sets how much it replaces white (0xRRGGBBAA) |
 | `brightness` | float | — | `0.82` | `1.12` | Brightness multiplier |
 | `contrast` | float | — | `0.90` | `0.92` | Contrast around midpoint |
 | `saturation` | float | — | `0.80` | `0.85` | Desaturation (0 = grayscale, 1 = full) |
@@ -194,7 +196,7 @@ Settings resolve through: **preset chain** (theme variant, shared, inherited) th
 
 `—` in Global Default = falls through to per-theme default. `—` in Dark/Light = inherits global value.
 
-Ranges in parentheses are the usual span, not limits: only `blur_iterations`, `self_sample`, `fresnel_reflection`, `edge_thickness_px` (at most half the smaller side) and `edge_height` (at most 500) are clamped, and the built-in presets go past some of them (`glass` uses `refraction_strength = 8.0`).
+Ranges in parentheses are the usual span, not limits: only `blur_iterations`, `self_sample`, `focus_light`, `fresnel_reflection`, `edge_thickness_px` (at most half the smaller side) and `edge_height` (at most 500) are clamped, and the built-in presets go past some of them (`glass` uses `refraction_strength = 8.0`).
 
 #### Self sampling
 
@@ -339,6 +341,36 @@ preset = name:lens, inherits:clear, edge_height:30, edge_thickness_px:20
 - Applies to windows, layers and subsurface items
 
 **Cost:** none while `edge_height` is `0`. Above `0`, a little extra GPU work on the edge only.
+
+#### Focus light
+
+`focus_light` lights the glass edge of the active window all the way round: a bright line just inside the edge over a soft sheen, brightest on the side the bevel light comes from (`bevel_angle`). `0` (default) turns it off. When focus moves, the light fades over to the new window.
+
+**On the fly:**
+```bash
+hyprctl keyword plugin:hyprglass:focus_light 0.8
+hyprctl keyword plugin:hyprglass:focus_light_color 0x66b3ffff
+```
+
+**Lua:**
+```lua
+hg.config({ focus_light = 0.8, focus_light_color = 0x66b3ffff })
+hg.preset("terminal", { inherits = "clear", focus_light = 1.0 })
+```
+
+**Legacy .conf:**
+```ini
+focus_light = 0.8
+focus_light_color = 0x66b3ffff
+preset = name:terminal, inherits:clear, focus_light:1.0
+```
+
+- Visible through translucent windows only: the glass sits under the window
+- With `border_size = 0` it can replace Hyprland's border
+- Windows only: not on layers or subsurface items, and not on fullscreen windows
+- With `animations:enabled = 0` it switches without a fade
+
+**Cost:** none while `focus_light` is `0`. Above `0`, a little extra GPU work on the active window only. When focus moves, a few redrawn frames and one extra refresh of the glass around the two windows. Nothing is redrawn while focus stays put.
 
 ### Layer surfaces
 
