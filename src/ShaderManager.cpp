@@ -16,19 +16,18 @@ std::string CShaderManager::loadShaderSource(const char* fileName) {
     throw std::runtime_error(message);
 }
 
-bool CShaderManager::compileGlassShader() {
-    if (!glassShader->createProgram(
+bool CShaderManager::compileGlassProgram(SGlassProgram& glass, GlassFeatureMask features) {
+    if (!glass.shader->createProgram(
             g_pHyprOpenGL->m_shaders->TEXVERTSRC,
-            loadShaderSource("liquidglass.frag"),
-            true
-        )) {
-        HyprlandAPI::addNotification(PHANDLE,
-            std::format("[{}] Failed to compile glass shader, glass is off until the plugin is reloaded", PLUGIN_NAME),
-            CHyprColor{1.0, 0.2, 0.2, 1.0}, 5000);
+            glassVariantSource(loadShaderSource("liquidglass.frag"), features),
+            true,
+            // A variant failure falls back to the default program; our notification is enough.
+            features != GLASS_FEATURE_NONE
+        ))
         return false;
-    }
 
-    const auto program = glassShader->program();
+    const auto program       = glass.shader->program();
+    auto&      glassUniforms = glass.uniforms;
 
     glassUniforms.refractionStrength  = glGetUniformLocation(program, "refractionStrength");
     glassUniforms.noiseStrength       = glGetUniformLocation(program, "noiseStrength");
@@ -109,12 +108,41 @@ void CShaderManager::initializeIfNeeded() {
     if (m_initialized || m_compileFailed)
         return;
 
-    m_initialized   = compileGlassShader() && compileBlurShader();
+    if (!compileGlassProgram(m_defaultGlass, GLASS_FEATURE_NONE)) {
+        HyprlandAPI::addNotification(PHANDLE,
+            std::format("[{}] Failed to compile glass shader, glass is off until the plugin is reloaded", PLUGIN_NAME),
+            CHyprColor{1.0, 0.2, 0.2, 1.0}, 5000);
+        m_compileFailed = true;
+        return;
+    }
+
+    m_initialized   = compileBlurShader();
     m_compileFailed = !m_initialized;
 }
 
+SGlassProgram& CShaderManager::glassProgram(GlassFeatureMask features) {
+    features &= GLASS_FEATURE_ALL;
+    if (features == GLASS_FEATURE_NONE)
+        return m_defaultGlass;
+
+    auto [variant, inserted] = m_glassVariants.try_emplace(features);
+    if (inserted && !compileGlassProgram(variant->second, features)) {
+        variant->second.failed = true;
+        HyprlandAPI::addNotification(PHANDLE,
+            std::format("[{}] An optional glass effect failed to compile (features {:#x}), glass is drawn without it",
+                        PLUGIN_NAME, features),
+            CHyprColor{1.0, 0.6, 0.2, 1.0}, 8000);
+    }
+
+    return variant->second.failed ? m_defaultGlass : variant->second;
+}
+
 void CShaderManager::destroy() noexcept {
-    glassShader->destroy();
+    m_defaultGlass.shader->destroy();
+    m_defaultGlass.uniforms = {};
+    for (auto& [features, variant] : m_glassVariants)
+        variant.shader->destroy();
+    m_glassVariants.clear();
     blurShader->destroy();
     m_initialized   = false;
     m_compileFailed = false;
