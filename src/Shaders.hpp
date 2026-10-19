@@ -104,6 +104,18 @@ uniform vec2 glassUVOffset;
 uniform vec2 sampleUVOffset;
 uniform vec2 sampleUVScale;
 
+#ifdef HYPRGLASS_FEATURE_LENS_EDGE
+uniform float lensHeightPx;          // edge_height in framebuffer px, > 0
+uniform float lensReflection;        // fresnel_reflection, 0..1
+uniform float lensReflectionReachPx; // farthest the rim mirrors outside the glass, inside the sample padding
+
+const float LENS_IOR = 1.5;
+// refractive index spread per unit of chromatic_aberration: red below LENS_IOR, blue above
+const float LENS_DISPERSION = 0.25;
+// refraction_strength that bends by exactly what Snell's law gives
+const float LENS_REFERENCE_STRENGTH = 0.6;
+#endif
+
 in vec2 v_texcoord;
 layout(location = 0) out vec4 fragColor;
 
@@ -249,6 +261,41 @@ vec2 sdfOutwardNormal(vec2 uv) {
     return len > 0.0 ? grad / len : vec2(0.0, -1.0);
 }
 
+#ifdef HYPRGLASS_FEATURE_LENS_EDGE
+// ============================================================================
+// LENS EDGE
+// The rim (the edge width) is a convex glass wall edge_height tall: a quarter
+// ellipse across its width, vertical at the edge and flat from its inner side
+// on, so the centre is not bent at all. A vertical eye ray refracts where it
+// enters the rim (Snell's law) and runs down through the glass to the backdrop.
+// ============================================================================
+
+// The edge distance main() uses (bevelSdf), so the rim normal has no crease either.
+float lensEdgeSDF(vec2 uv) {
+    return roundingPower == 2.0 ? getBevelSDF(uv) : getCornerSDF(uv);
+}
+
+// Inward distance, in px, between where the eye ray enters the glass and where
+// it meets the backdrop: n is the surface normal as (inward, up), surfacePx the
+// glass height there. gain scales it, capPx bounds it smoothly.
+float lensBendPx(vec2 n, float surfacePx, float ior, float gain, float capPx) {
+    vec2 ray = refract(vec2(0.0, -1.0), n, 1.0 / ior);
+    float runPx = surfacePx * ray.x / max(-ray.y, 1e-3);
+    return capPx * tanh(clamp(gain * runPx / capPx, -8.0, 8.0));
+}
+
+// At a square or tight corner the rim normal turns all the way round within a
+// few pixels, so every ray there bends toward one point (a dark curl) and the
+// reflection swirls. Fades both out near a corner whose radius is under the rim width.
+float lensCornerFade(vec2 uv, float rimPx) {
+    vec2  halfBox    = glassBoxSizePx * 0.5;
+    vec2  fromCenter = uv * fullSize - glassBoxOffsetPx - halfBox;
+    float radius     = min(pickCornerRadius(fromCenter, radii), min(halfBox.x, halfBox.y));
+    float toCorner   = length(max(halfBox - abs(fromCenter), 0.0));
+    return mix(smoothstep(0.0, rimPx, toCorner), 1.0, clamp(radius / rimPx, 0.0, 1.0));
+}
+#endif
+
 // ============================================================================
 // MAIN — Thick-glass refraction model
 // ============================================================================
@@ -338,6 +385,45 @@ void main() {
     vec2 inwardDir = refractionDir(glassUV);
     vec2 posPx = (glassUV - 0.5) * glassBoxSizePx; // pixel-space position for the edge-flow direction below
 
+#ifdef HYPRGLASS_FEATURE_LENS_EDGE
+    // ========================================
+    // LENS EDGE REFRACTION (see lensBendPx). Replaces the soft edge refraction
+    // below: refraction_flow and refraction_spread do not apply. Each channel has
+    // its own refractive index, so the rainbow shows only where the rim is steep.
+    // ========================================
+    float rimDepthPx = max(-bevelSdf, 0.0);
+    bool  inRim      = rimDepthPx < bezelWidthPx;
+    vec2  offsetR    = vec2(0.0);
+    vec2  offsetG    = vec2(0.0);
+    vec2  offsetB    = vec2(0.0);
+    vec2  lensInward    = inwardDir;
+    vec2  lensNormal    = vec2(0.0, 1.0); // (inward, up)
+    float lensSurfacePx = 0.0;            // glass height over the backdrop here
+    float lensCornerWeight = 1.0;
+    if (inRim) {
+        float u    = 1.0 - rimDepthPx / bezelWidthPx; // 1 at the edge, 0 at the rim's inner side
+        float rise = sqrt(max(1.0 - u * u, 0.0));
+        lensSurfacePx = lensHeightPx * rise;
+        lensNormal    = normalize(vec2(-u / bezelWidthPx, rise / max(lensHeightPx, 1e-3)));
+
+        vec2 grad = vec2(lensEdgeSDF(uv + vec2(invFullSize.x, 0.0)) - bevelSdf,
+                         lensEdgeSDF(uv + vec2(0.0, invFullSize.y)) - bevelSdf);
+        float gradLen = length(grad);
+        if (gradLen > 1e-4) lensInward = -grad / gradLen;
+
+        lensCornerWeight = lensCornerFade(uv, bezelWidthPx);
+        float gain   = refractionStrength / LENS_REFERENCE_STRENGTH * lensCornerWeight;
+        vec2  inwardStep = lensInward * invFullSize;
+        offsetG = inwardStep * lensBendPx(lensNormal, lensSurfacePx, LENS_IOR, gain, bezelWidthPx);
+        offsetR = offsetG;
+        offsetB = offsetG;
+        if (chromaticAberration > 0.001) {
+            float spread = chromaticAberration * LENS_DISPERSION;
+            offsetR = inwardStep * lensBendPx(lensNormal, lensSurfacePx, max(LENS_IOR - spread, 1.0), gain, bezelWidthPx);
+            offsetB = inwardStep * lensBendPx(lensNormal, lensSurfacePx, LENS_IOR + spread, gain, bezelWidthPx);
+        }
+    }
+#else
     // ========================================
     // EDGE REFRACTION
     // Offset sampling UV inward (toward center) at edges — like looking
@@ -371,6 +457,7 @@ void main() {
     vec2 offsetR = baseOffset * (1.0 - chromaSpread);
     vec2 offsetG = baseOffset;
     vec2 offsetB = baseOffset * (1.0 + chromaSpread);
+#endif
 
     // ========================================
     // CENTER DOME LENS (subtle magnification in the flat interior)
@@ -397,7 +484,11 @@ void main() {
     vec2 uvG = uv + offsetG + domeUV;
     vec2 uvB = uv + offsetB + domeUV;
 
+#ifdef HYPRGLASS_FEATURE_LENS_EDGE
+    if (chromaticAberration > 0.001 && inRim) {
+#else
     if (chromaticAberration > 0.001 && edgeProximity > 0.01) {
+#endif
         color.r = sampleBlurred(uvR).r;
         color.g = sampleBlurred(uvG).g;
         color.b = sampleBlurred(uvB).b;
@@ -436,6 +527,30 @@ void main() {
     // COLOR TINT OVERLAY
     // ========================================
     color = mix(color, tintColor, tintAlpha);
+
+#ifdef HYPRGLASS_FEATURE_LENS_EDGE
+    // ========================================
+    // RIM REFLECTION — the rim mirrors what is around the glass, as much as
+    // Schlick's Fresnel term gives for its slope: strongest where it is steepest.
+    // ========================================
+    if (lensReflection > 0.001 && inRim) {
+        vec2 mirrored = reflect(vec2(0.0, -1.0), lensNormal); // (inward, up)
+        // mirrored downward it lands on the backdrop just outside the edge; mirrored
+        // upward it sees the surroundings, read as far out as the sample reaches
+        // (one formula for both, so the reach has no seam where the slope crosses 45 degrees)
+        float runPx   = lensSurfacePx * -mirrored.x / max(-mirrored.y, 1e-3);
+        float reachPx = lensReflectionReachPx * tanh(min((rimDepthPx + runPx) / lensReflectionReachPx, 8.0));
+        vec4  seen    = sampleBlurred(uv - lensInward * reachPx * invFullSize);
+        // Schlick with lensReflection as the reflectance straight on (real glass: 0.04,
+        // a thin line only), fading out across the rim so the flat centre gets no seam
+        float u        = 1.0 - rimDepthPx / bezelWidthPx;
+        float straight = lensReflection * u;
+        float fresnel  = straight + (1.0 - straight) * pow(1.0 - clamp(lensNormal.y, 0.0, 1.0), 5.0);
+        // padding past the screen edge is cleared to transparent: mirror only what was sampled
+        float amount   = clamp(lensReflection * fresnel * seen.a * lensCornerWeight, 0.0, 1.0);
+        color = mix(color, seen.rgb / max(seen.a, 0.001), amount);
+    }
+#endif
 
     // grain-free copy for the rim tints, so the grain does not speckle their hue
     vec3 tintSource = color;

@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <GLES3/gl32.h>
 #include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/protocols/core/Compositor.hpp>
@@ -418,9 +419,11 @@ void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, in
 // The optional effects (ShaderVariants.hpp) this draw's resolved settings turn on.
 // Must stay GLASS_FEATURE_NONE whenever every effect is at its off value, so the
 // draw runs the default program.
-static GlassFeatureMask glassFeaturesFor([[maybe_unused]] const SResolveContext& resolveContext,
-                                         [[maybe_unused]] const SMaskInfo* mask) {
-    return GLASS_FEATURE_NONE;
+static GlassFeatureMask glassFeaturesFor(float edgeHeight) {
+    GlassFeatureMask features = GLASS_FEATURE_NONE;
+    if (edgeHeight > 0.0f)
+        features |= GLASS_FEATURE_LENS_EDGE;
+    return features;
 }
 
 void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFramebuffer> targetFramebuffer,
@@ -436,8 +439,12 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     if (const auto monitor = g_pHyprRenderer->m_renderData.pMonitor.lock())
         Diagnostics::recordGlassPixels(monitor->m_id, rawBox.w * rawBox.h);
 
+    const float edgeHeightValue =
+        std::min(resolvePresetFloat(resolveContext, &SPresetValues::edgeHeight, &SOverridableConfig::edgeHeight), EDGE_HEIGHT_MAX);
+    const auto features = glassFeaturesFor(edgeHeightValue);
+
     // Before any GL binding: a variant's first use compiles it, which rebinds the VAO and array buffer.
-    const auto& program  = g_pGlobalState->shaderManager.glassProgram(glassFeaturesFor(resolveContext, mask));
+    const auto& program  = g_pGlobalState->shaderManager.glassProgram(features);
     const auto& uniforms = program.uniforms;
 
     const auto transform = Math::wlTransformToHyprutils(
@@ -509,7 +516,9 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     glUniform1f(uniforms.invBezelWidthPx, 1.0f / std::max(edgeThicknessValue * minDimensionPx, 1e-4f));
     glUniform1f(uniforms.lensMaxPx, lensDistortionValue * minDimensionPx * 0.006f);
 
-    glUniform1f(uniforms.refractionStrength,  resolvePresetFloat(resolveContext, &SPresetValues::refractionStrength, &SOverridableConfig::refractionStrength));
+    // inf * 0 at a square lens corner would give NaN offsets
+    const float refractionStrengthValue = resolvePresetFloat(resolveContext, &SPresetValues::refractionStrength, &SOverridableConfig::refractionStrength);
+    glUniform1f(uniforms.refractionStrength,  std::isfinite(refractionStrengthValue) ? refractionStrengthValue : 0.0f);
     glUniform1f(uniforms.noiseStrength,       resolvePresetFloat(resolveContext, &SPresetValues::noiseStrength, &SOverridableConfig::noiseStrength));
     glUniform1f(uniforms.chromaticAberration, resolvePresetFloat(resolveContext, &SPresetValues::chromaticAberration, &SOverridableConfig::chromaticAberration));
     glUniform1f(uniforms.fresnelStrength,     resolvePresetFloat(resolveContext, &SPresetValues::fresnelStrength, &SOverridableConfig::fresnelStrength));
@@ -529,6 +538,14 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
 
     // bevel width is defined in logical px; scale it to framebuffer px per monitor
     glUniform1f(uniforms.monitorScale, monitorScale);
+
+    if (features & GLASS_FEATURE_LENS_EDGE) {
+        const float reflection =
+            resolvePresetFloat(resolveContext, &SPresetValues::fresnelReflection, &SOverridableConfig::fresnelReflection);
+        glUniform1f(uniforms.lensHeightPx, edgeHeightValue * monitorScale);
+        glUniform1f(uniforms.lensReflection, reflection > 0.0f ? std::min(reflection, 1.0f) : 0.0f);
+        glUniform1f(uniforms.lensReflectionReachPx, LENS_REFLECTION_REACH_PX);
+    }
 
     uploadThemeUniforms(resolveContext, program);
 

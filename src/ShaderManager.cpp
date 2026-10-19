@@ -80,6 +80,9 @@ bool CShaderManager::compileGlassProgram(SGlassProgram& glass, GlassFeatureMask 
     glassUniforms.glassBoxSizePx      = glGetUniformLocation(program, "glassBoxSizePx");
     glassUniforms.glassUVScale        = glGetUniformLocation(program, "glassUVScale");
     glassUniforms.glassUVOffset       = glGetUniformLocation(program, "glassUVOffset");
+    glassUniforms.lensHeightPx          = glGetUniformLocation(program, "lensHeightPx");
+    glassUniforms.lensReflection        = glGetUniformLocation(program, "lensReflection");
+    glassUniforms.lensReflectionReachPx = glGetUniformLocation(program, "lensReflectionReachPx");
 
     return true;
 }

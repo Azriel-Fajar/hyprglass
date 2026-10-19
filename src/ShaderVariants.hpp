@@ -14,8 +14,8 @@
 using GlassFeatureMask = uint32_t;
 
 inline constexpr GlassFeatureMask GLASS_FEATURE_NONE = 0;
-// Reserved slot, selected by no setting; the first effect replaces it.
-inline constexpr GlassFeatureMask GLASS_FEATURE_PLACEHOLDER = 1u << 0;
+// edge_height > 0: the rim is a lens that refracts (and can mirror) what is around it.
+inline constexpr GlassFeatureMask GLASS_FEATURE_LENS_EDGE = 1u << 0;
 
 struct SGlassFeatureDefine {
     GlassFeatureMask bit;
@@ -24,7 +24,7 @@ struct SGlassFeatureDefine {
 
 // One entry per feature bit.
 inline constexpr std::array GLASS_FEATURE_DEFINES{
-    SGlassFeatureDefine{GLASS_FEATURE_PLACEHOLDER, "HYPRGLASS_FEATURE_PLACEHOLDER"},
+    SGlassFeatureDefine{GLASS_FEATURE_LENS_EDGE, "HYPRGLASS_FEATURE_LENS_EDGE"},
 };
 
 [[nodiscard]] consteval GlassFeatureMask allGlassFeatures() {
