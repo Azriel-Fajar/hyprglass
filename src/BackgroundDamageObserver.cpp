@@ -143,6 +143,31 @@ namespace {
         return root->findFirstPreorder([&surface](SP<CWLSurfaceResource> candidate) { return candidate == surface; }) != nullptr;
     }
 
+    // A contour layer's outline was traced from its own content: a commit that changes that
+    // content makes it stale. Unconditional like damageSelfSamplingWindow(): it has nothing to
+    // do with live resample, only with what the layer itself draws.
+    void invalidateContourOnOwnCommit(const SP<CWLSurfaceResource>& resource) {
+        if (!g_pGlobalState || g_pGlobalState->contourScratch.users <= 0)
+            return;
+
+        // same bit Hyprland tests: a commit without damage changes no pixel
+        if (!resource->m_current.updated.bits.damage)
+            return;
+
+        for (const auto& [_, state] : g_pGlobalState->layerSurfaces) {
+            if (!state || !state->holdsContour())
+                continue;
+
+            const auto layer = state->getLayerSurface();
+            if (!layer || !layer->m_mapped || !layer->wlSurface())
+                continue;
+
+            // the layer's own surfaces, not its popups: those are not in what the field was traced from
+            if (surfaceInTree(resource, layer->wlSurface()->resource()))
+                state->markContourContentChanged();
+        }
+    }
+
     void onSurfaceCommit(const SP<CWLSurfaceResource>& resource) {
         if (!g_pGlobalState || !resource)
             return;
@@ -288,6 +313,7 @@ namespace {
             try {
                 if (const auto surface = key.lock()) {
                     damageSelfSamplingWindow(surface);
+                    invalidateContourOnOwnCommit(surface);
                     onSurfaceCommit(surface);
                 }
             } catch (const std::exception& e) {

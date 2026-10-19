@@ -138,6 +138,15 @@ const float FROST_SATURATION_LIFT = 0.35; // frosted glass reads slightly more c
 const float FROST_DIM = 0.10;             // ... and slightly deeper, at full amount
 #endif
 
+#ifdef HYPRGLASS_FEATURE_CONTOUR
+// Layers with mask_mode = contour: the edge follows the outline the app draws, read
+// from a distance field (Contour.hpp) instead of the layer's rectangle.
+uniform highp sampler2D contourTex; // r: signed distance to the outline in px (negative inside), gb: its gradient
+uniform vec2 contourUVScale;      // box UV -> field UV: the field covers whole texels, the box need not
+uniform float contourReferencePx; // the bezel is a fraction of this, not of the layer's short side
+uniform float contourReachPx;     // where the field stops; the edge effects fade out before it
+#endif
+
 in vec2 v_texcoord;
 layout(location = 0) out vec4 fragColor;
 
@@ -366,8 +375,19 @@ void main() {
         }
     }
 
+#ifdef HYPRGLASS_FEATURE_CONTOUR
+    // The traced outline replaces the layer box. The mask above already limits the glass
+    // to the visible content, so the outline only shapes the edge effects, not the cut.
+    vec4  contourSample  = texture(contourTex, uv * contourUVScale);
+    float cornerSdf      = contourSample.r;
+    float cornerAlpha    = 1.0;
+    float contourGradLen = length(contourSample.gb);
+    // zero where the field is flat (deep inside, or past its reach): no edge there
+    vec2  contourOutward = contourGradLen > 0.05 ? contourSample.gb / contourGradLen : vec2(0.0);
+#else
     float cornerSdf    = getCornerSDF(uv);
     float cornerAlpha  = 1.0 - smoothstep(-1.5, 0.5, cornerSdf);
+#endif
 
     if (hasMask) {
         // Layers and subsurface items: the glass box (glassBoxOffsetPx/SizePx) can be
@@ -392,7 +412,11 @@ void main() {
     // Position within the glass box: everything shaped by the glass (bezel, lens,
     // refraction centre, lighting) follows it, not the drawn box.
     vec2 glassUV = uv * glassUVScale - glassUVOffset;
+#ifdef HYPRGLASS_FEATURE_CONTOUR
+    float minDim = contourReferencePx;
+#else
     float minDim = min(glassBoxSizePx.x, glassBoxSizePx.y);
+#endif
     float bezelWidthPx = max(edgeThickness * minDim, 1e-4); // same floor as invBezelWidthPx
 
     // ========================================
@@ -406,10 +430,19 @@ void main() {
     // ========================================
     // crease-free bevel distance, so the edge has no seam along the corner diagonals;
     // it assumes circular corners, so a superellipse outline keeps the exact SDF
+#ifdef HYPRGLASS_FEATURE_CONTOUR
+    // The field is smoothed, so it has no corner seam to avoid. Its reach is the end of the
+    // data: the window takes the effects to zero before it, rather than cutting them off.
+    float bevelSdf = cornerSdf;
+    float edgeProximity = min(exp(bevelSdf * invBezelWidthPx), 1.0) *
+                          (1.0 - smoothstep(0.5 * contourReachPx, contourReachPx, -bevelSdf));
+    vec2 inwardDir = -contourOutward;
+#else
     float bevelSdf = roundingPower == 2.0 ? getBevelSDF(uv) : cornerSdf;
     float edgeProximity = min(exp(bevelSdf * invBezelWidthPx), 1.0);
     vec2 inwardDir = refractionDir(glassUV);
     vec2 posPx = (glassUV - 0.5) * glassBoxSizePx; // pixel-space position for the edge-flow direction below
+#endif
 
 #ifdef HYPRGLASS_FEATURE_LENS_EDGE
     // ========================================
@@ -432,12 +465,16 @@ void main() {
         lensSurfacePx = lensHeightPx * rise;
         lensNormal    = normalize(vec2(-u / bezelWidthPx, rise / max(lensHeightPx, 1e-3)));
 
+#ifdef HYPRGLASS_FEATURE_CONTOUR
+        lensInward = inwardDir;
+#else
         vec2 grad = vec2(lensEdgeSDF(uv + vec2(invFullSize.x, 0.0)) - bevelSdf,
                          lensEdgeSDF(uv + vec2(0.0, invFullSize.y)) - bevelSdf);
         float gradLen = length(grad);
         if (gradLen > 1e-4) lensInward = -grad / gradLen;
 
         lensCornerWeight = lensCornerFade(uv, bezelWidthPx);
+#endif
         float gain   = refractionStrength / LENS_REFERENCE_STRENGTH * lensCornerWeight;
         vec2  inwardStep = lensInward * invFullSize;
         offsetG = inwardStep * lensBendPx(lensNormal, lensSurfacePx, LENS_IOR, gain, bezelWidthPx);
@@ -467,12 +504,15 @@ void main() {
     }
     float refractionMag = lensFalloff * refractionPx;
     vec2 dir = inwardDir;
+#ifndef HYPRGLASS_FEATURE_CONTOUR
+    // (a traced outline already pulls along each edge's own normal)
     if (refractionFlow > 0.001) {
         // pull along the edges instead of toward the centre
         vec2 mixedDir = mix(inwardDir, edgeDir(posPx), refractionFlow);
         float mixedLen = length(mixedDir);
         dir = mixedLen > 0.0001 ? mixedDir / mixedLen : inwardDir;
     }
+#endif
     vec2 baseOffset = dir * refractionMag * invFullSize;
 
     // ========================================
@@ -490,6 +530,7 @@ void main() {
     // Fades near edges so it doesn't interfere with edge refraction.
     // ========================================
     vec2 domeUV = vec2(0.0);
+#ifndef HYPRGLASS_FEATURE_CONTOUR   // a dome needs one centre: a traced outline has one per card
     if (lensDistortion > 0.001) {
         vec2 c = (glassUV - 0.5) * 2.0;
         vec2 dGrad = vec2(
@@ -499,6 +540,7 @@ void main() {
         float lensFade = 1.0 - edgeProximity;
         domeUV = dGrad * lensMaxPx * lensFade * invFullSize;
     }
+#endif
 
     // ========================================
     // BACKGROUND SAMPLING (frosted blur only)
@@ -608,7 +650,11 @@ void main() {
         float ring = (1.0 - smoothstep(-core, 0.0, cornerSdf)) * smoothstep(-tail, -core, cornerSdf);
 
         // lit side faces the light, the far side fades out and can be shadowed
+#ifdef HYPRGLASS_FEATURE_CONTOUR
+        float facing = clamp(dot(contourOutward, lightDir(bevelAngle)) * 0.5 + 0.5, 0.0, 1.0);
+#else
         float facing = clamp(dot(sdfOutwardNormal(uv), lightDir(bevelAngle)) * 0.5 + 0.5, 0.0, 1.0);
+#endif
 
         vec3 bevelLight = vec3(1.0);
         if (bevelColorAlpha > 0.001) bevelLight = mix(vec3(1.0), bevelColor, bevelColorAlpha);   // a dark colour gives a dark line
@@ -643,6 +689,10 @@ void main() {
     // SPECULAR — subtle top highlight (edge zone)
     // ========================================
     if (specularStrength > 0.001) {
+#ifdef HYPRGLASS_FEATURE_CONTOUR
+        // the edge facing the light, like the top of a box at angle 0
+        float specT = clamp(0.5 + 0.5 * dot(contourOutward, lightDir(specularAngle)), 0.0, 1.0);
+#else
         float specT = max(1.0 - glassUV.y, 0.0);
         if (abs(specularAngle) > 0.001) {
             // rotate the highlight gradient toward the light: at angle 0, lightDir gives
@@ -650,6 +700,7 @@ void main() {
             vec2 L = lightDir(specularAngle);
             specT = clamp(0.5 + dot(glassUV - 0.5, L), 0.0, 1.0);
         }
+#endif
         float topBias = pow(specT, 2.0);
         float spec = topBias * edgeProximity * edgeProximity * specularStrength * 0.08;
         color += vec3(1.0, 0.99, 0.97) * spec;
@@ -659,8 +710,13 @@ void main() {
     // INNER SHADOW (bottom rim)
     // ========================================
     {
+#ifdef HYPRGLASS_FEATURE_CONTOUR
+        // the edge facing away from the light: 1 at the bottom, a quarter at the sides, like a box
+        float bottomBias = pow(0.5 + 0.5 * contourOutward.y, 2.0);
+#else
         // max(): item fragments just above the glass box have glassUV.y < 0, where pow() is undefined
         float bottomBias = pow(max(glassUV.y, 0.0), 2.0);
+#endif
         float shadow = bottomBias * edgeProximity * edgeProximity * 0.06;
         color *= 1.0 - shadow;
     }
@@ -760,6 +816,165 @@ void main() {
     }
 
     fragColor = result / totalWeight;
+}
+)GLSL"},
+    // ----------------------------------------------------------------------------
+    // Contour field (mask_mode = contour, see Contour.hpp). Six passes at a fraction of the
+    // layer's size build a signed distance field of the outline the app draws; they run only
+    // when the layer's content changes. Texel (i, j) is framebuffer row j, like everywhere else.
+    // ----------------------------------------------------------------------------
+
+    // Pass 1: which texels are inside the outline. The result is the start of a distance
+    // transform: per channel the squared distance to the nearest texel of the other kind
+    // (r: for an inside texel, to an outside one; g: the opposite), 0 on texels of that
+    // other kind and FAR where nothing is known yet.
+    {"contourseed.frag", R"GLSL(
+#version 300 es
+precision highp float;
+precision highp sampler2D;
+
+uniform sampler2D tex;       // the layer's own render, alpha is the mask
+uniform vec2 boxOffsetPx;    // the layer box in that framebuffer
+uniform vec2 boxSizePx;
+uniform vec2 sourceSizePx;
+uniform float divisor;       // framebuffer px per texel: 1, 2, 4 or 8
+uniform float threshold;     // alpha at which the app's content counts
+
+layout(location = 0) out vec4 fragColor;
+
+const float FAR = 16384.0;   // above any squared distance within reach, and exact in half floats (Contour.hpp)
+
+void main() {
+    vec2 texel = floor(gl_FragCoord.xy);
+
+    // Mean alpha over the texel's block. A tap on the shared corner of 2x2 pixels already
+    // averages them in hardware, so one tap per 2 px, and only the block's own pixels.
+    float taps    = max(divisor * 0.5, 1.0);
+    float stepPx  = divisor > 1.5 ? 2.0 : 1.0;
+    float startPx = divisor > 1.5 ? 1.0 : 0.5;
+    float sum = 0.0;
+    for (float j = 0.0; j < taps; j += 1.0) {
+        for (float i = 0.0; i < taps; i += 1.0) {
+            vec2 p = texel * divisor + vec2(startPx + i * stepPx, startPx + j * stepPx);
+            // never past the box: outside it the layer's render is not cleared, so it holds old frames
+            p = clamp(p, vec2(0.5), boxSizePx - 0.5);
+            // past the monitor the layer is cut off: carry its edge on
+            vec2 q = clamp(boxOffsetPx + p, vec2(0.5), sourceSizePx - 0.5);
+            sum += texture(tex, q / sourceSizePx).a;
+        }
+    }
+
+    bool inside = sum / (taps * taps) >= threshold;
+    fragColor = vec4(inside ? FAR : 0.0, inside ? 0.0 : FAR, 0.0, 1.0);
+}
+)GLSL"},
+
+    // Passes 2 and 3: the exact Euclidean distance transform, one axis at a time (squared
+    // distance = min over the row of (offset^2 + what the previous axis found)), looking at
+    // most reachTexels away. Texels past the box count as outside, so a layer's own edge is an
+    // outline. The last pass turns both distances into one signed distance in framebuffer px,
+    // half a texel in from each class's centre so that zero is the outline itself.
+    {"contouredt.frag", R"GLSL(
+#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+
+uniform sampler2D tex;
+uniform vec2 fieldSize;       // texels
+uniform vec2 direction;       // (1, 0) or (0, 1)
+uniform int reachTexels;
+uniform int resolveSigned;    // 1 on the last pass
+uniform float texelPx;        // framebuffer px per texel
+uniform float reachPx;        // the signed distance is clamped to +-this
+
+layout(location = 0) out vec4 fragColor;
+
+const float FAR = 16384.0;
+
+vec2 known(vec2 p) {
+    if (p.x < 0.0 || p.y < 0.0 || p.x >= fieldSize.x || p.y >= fieldSize.y)
+        return vec2(0.0, FAR);
+    return texelFetch(tex, ivec2(p), 0).rg;
+}
+
+void main() {
+    vec2 p = floor(gl_FragCoord.xy);
+    vec2 best = known(p);
+    for (int k = 1; k <= reachTexels; k++) {
+        float offsetSq = float(k * k);
+        // nothing farther can beat what is found
+        if (offsetSq >= max(best.x, best.y)) break;
+        vec2 step = direction * float(k);
+        best = min(best, min(known(p + step), known(p - step)) + offsetSq);
+    }
+
+    if (resolveSigned == 1) {
+        // an outside texel has best.x == 0: its own squared distance to "outside" is nothing
+        float signedPx = best.x > 0.0 ? -(sqrt(best.x) - 0.5) * texelPx
+                                      :  (sqrt(best.y) - 0.5) * texelPx;
+        fragColor = vec4(clamp(signedPx, -reachPx, reachPx), 0.0, 0.0, 1.0);
+    } else {
+        fragColor = vec4(best, 0.0, 1.0);
+    }
+}
+)GLSL"},
+
+    // Passes 4 and 5: a Gaussian along one axis on the signed distance. The distance is linear
+    // through the outline, so this leaves the outline where it is and only rounds the creases
+    // where distances from two edges meet at a corner.
+    {"contoursmooth.frag", R"GLSL(
+#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+
+uniform sampler2D tex;
+uniform vec2 fieldSize;
+uniform vec2 direction;
+uniform int radius;           // taps each side
+uniform float negHalfInvSigmaSq;
+
+layout(location = 0) out vec4 fragColor;
+
+void main() {
+    ivec2 p = ivec2(gl_FragCoord.xy);
+    ivec2 last = ivec2(fieldSize) - 1;
+    ivec2 axis = ivec2(direction);
+    float sum = 0.0;
+    float weights = 0.0;
+    for (int k = -radius; k <= radius; k++) {
+        float w = exp(float(k * k) * negHalfInvSigmaSq);
+        sum += w * texelFetch(tex, clamp(p + axis * k, ivec2(0), last), 0).r;
+        weights += w;
+    }
+    fragColor = vec4(sum / weights, 0.0, 0.0, 1.0);
+}
+)GLSL"},
+
+    // Pass 6: the field the glass shader reads. r: the signed distance, gb: its gradient
+    // (outward, about unit length), so the shader needs one fetch for both.
+    {"contourfield.frag", R"GLSL(
+#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+
+uniform sampler2D tex;
+uniform vec2 fieldSize;
+uniform float texelPx;
+
+layout(location = 0) out vec4 fragColor;
+
+void main() {
+    ivec2 p = ivec2(gl_FragCoord.xy);
+    ivec2 last = ivec2(fieldSize) - 1;
+    float centre = texelFetch(tex, p, 0).r;
+    float left   = texelFetch(tex, clamp(p + ivec2(-1, 0), ivec2(0), last), 0).r;
+    float right  = texelFetch(tex, clamp(p + ivec2(1, 0), ivec2(0), last), 0).r;
+    float above  = texelFetch(tex, clamp(p + ivec2(0, -1), ivec2(0), last), 0).r;
+    float below  = texelFetch(tex, clamp(p + ivec2(0, 1), ivec2(0), last), 0).r;
+    fragColor = vec4(centre, vec2(right - left, below - above) / (2.0 * texelPx), 1.0);
 }
 )GLSL"},
 };

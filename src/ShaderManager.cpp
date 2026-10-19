@@ -88,6 +88,10 @@ bool CShaderManager::compileGlassProgram(SGlassProgram& glass, GlassFeatureMask 
     glassUniforms.focusLightColorAlpha  = glGetUniformLocation(program, "focusLightColorAlpha");
     glassUniforms.frostTex              = glGetUniformLocation(program, "frostTex");
     glassUniforms.frostAmount           = glGetUniformLocation(program, "frostAmount");
+    glassUniforms.contourTex            = glGetUniformLocation(program, "contourTex");
+    glassUniforms.contourUVScale        = glGetUniformLocation(program, "contourUVScale");
+    glassUniforms.contourReferencePx    = glGetUniformLocation(program, "contourReferencePx");
+    glassUniforms.contourReachPx        = glGetUniformLocation(program, "contourReachPx");
 
     return true;
 }
@@ -112,6 +116,72 @@ bool CShaderManager::compileBlurShader() {
     return true;
 }
 
+bool CShaderManager::compileContourPrograms() {
+    const auto& vertex = g_pHyprOpenGL->m_shaders->TEXVERTSRC;
+
+    // dynamic: a program the driver rejects comes back false instead of aborting the compositor
+    if (!m_contour.seed->createProgram(vertex, loadShaderSource("contourseed.frag"), true, true) ||
+        !m_contour.edt->createProgram(vertex, loadShaderSource("contouredt.frag"), true, true) ||
+        !m_contour.smooth->createProgram(vertex, loadShaderSource("contoursmooth.frag"), true, true) ||
+        !m_contour.pack->createProgram(vertex, loadShaderSource("contourfield.frag"), true, true))
+        return false;
+
+    auto locate = [](const SP<CShader>& shader, const char* name) { return glGetUniformLocation(shader->program(), name); };
+
+    auto& seed         = m_contour.seedUniforms;
+    seed.tex           = locate(m_contour.seed, "tex");
+    seed.boxOffsetPx   = locate(m_contour.seed, "boxOffsetPx");
+    seed.boxSizePx     = locate(m_contour.seed, "boxSizePx");
+    seed.sourceSizePx  = locate(m_contour.seed, "sourceSizePx");
+    seed.divisor       = locate(m_contour.seed, "divisor");
+    seed.threshold     = locate(m_contour.seed, "threshold");
+
+    auto& edt          = m_contour.edtUniforms;
+    edt.tex            = locate(m_contour.edt, "tex");
+    edt.fieldSize      = locate(m_contour.edt, "fieldSize");
+    edt.direction      = locate(m_contour.edt, "direction");
+    edt.reachTexels    = locate(m_contour.edt, "reachTexels");
+    edt.resolveSigned  = locate(m_contour.edt, "resolveSigned");
+    edt.texelPx        = locate(m_contour.edt, "texelPx");
+    edt.reachPx        = locate(m_contour.edt, "reachPx");
+
+    auto& smooth             = m_contour.smoothUniforms;
+    smooth.tex               = locate(m_contour.smooth, "tex");
+    smooth.fieldSize         = locate(m_contour.smooth, "fieldSize");
+    smooth.direction         = locate(m_contour.smooth, "direction");
+    smooth.radius            = locate(m_contour.smooth, "radius");
+    smooth.negHalfInvSigmaSq = locate(m_contour.smooth, "negHalfInvSigmaSq");
+
+    auto& pack     = m_contour.packUniforms;
+    pack.tex       = locate(m_contour.pack, "tex");
+    pack.fieldSize = locate(m_contour.pack, "fieldSize");
+    pack.texelPx   = locate(m_contour.pack, "texelPx");
+
+    return true;
+}
+
+const SContourPrograms* CShaderManager::contourPrograms() {
+    if (m_contourCompiled)
+        return &m_contour;
+    if (m_contourFailed)
+        return nullptr;
+
+    if (compileContourPrograms()) {
+        m_contourCompiled = true;
+        return &m_contour;
+    }
+
+    m_contourFailed = true;
+    m_contour.seed->destroy();
+    m_contour.edt->destroy();
+    m_contour.smooth->destroy();
+    m_contour.pack->destroy();
+    HyprlandAPI::addNotification(PHANDLE,
+        std::format("[{}] The contour shaders failed to compile, layers fall back to mask_mode = alpha", PLUGIN_NAME),
+        CHyprColor{1.0, 0.6, 0.2, 1.0}, 8000);
+    return nullptr;
+}
+
 void CShaderManager::initializeIfNeeded() {
     if (m_initialized || m_compileFailed)
         return;
@@ -134,6 +204,8 @@ SGlassProgram& CShaderManager::glassProgram(GlassFeatureMask features) {
         return m_defaultGlass;
 
     auto [variant, inserted] = m_glassVariants.try_emplace(features);
+    if (inserted)
+        variant->second.features = features;
     if (inserted && !compileGlassProgram(variant->second, features)) {
         variant->second.failed = true;
         HyprlandAPI::addNotification(PHANDLE,
@@ -152,6 +224,15 @@ void CShaderManager::destroy() noexcept {
         variant.shader->destroy();
     m_glassVariants.clear();
     blurShader->destroy();
+    if (m_contourCompiled) {
+        m_contour.seed->destroy();
+        m_contour.edt->destroy();
+        m_contour.smooth->destroy();
+        m_contour.pack->destroy();
+    }
+    m_contour         = {};
+    m_contourCompiled = false;
+    m_contourFailed   = false;
     m_initialized   = false;
     m_compileFailed = false;
 }

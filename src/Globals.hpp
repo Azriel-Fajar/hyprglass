@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Contour.hpp"
 #include "GlassLayerSurface.hpp"
 #include "PluginConfig.hpp"
 #include "ShaderManager.hpp"
@@ -13,6 +14,7 @@
 #include <hyprland/src/SharedDefs.hpp>
 #include <hyprutils/signal/Listener.hpp>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -78,6 +80,13 @@ struct SGlobalState {
     std::unordered_map<std::string, float> layerNamespaceMaskFeathers;
     // Per-namespace fixed glass shape (namespace → shape); absent = the whole layer box
     std::unordered_map<std::string, SLayerShape> layerNamespaceShapes;
+
+    // Contour (layers:mask_mode = contour): the render targets every layer's field build
+    // shares, and whether the GPU can do it at all. Once the GPU or the shaders turn out not
+    // to be up to it, every layer draws as with mask_mode = alpha until the plugin is reloaded.
+    Contour::SScratch   contourScratch;
+    std::optional<bool> contourGpuSupported;
+    bool                contourUnavailable = false;
 
     // Per-monitor generation counter, incremented when the scene behind layers
     // changes on that monitor. Layer surfaces compare to their cached value to

@@ -39,6 +39,7 @@ std::optional<ELayerMaskMode> parseLayerMaskMode(std::string_view value) {
     if (value == "auto")   return ELayerMaskMode::AUTO;
     if (value == "alpha")  return ELayerMaskMode::ALPHA;
     if (value == "region") return ELayerMaskMode::REGION;
+    if (value == "contour") return ELayerMaskMode::CONTOUR;
     return std::nullopt;
 }
 
@@ -1011,7 +1012,7 @@ void validateConfig() {
     const auto maskMode = readStringConfig(config.layersMaskMode);
     if (!parseLayerMaskMode(maskMode)) {
         HyprlandAPI::addNotificationV2(PHANDLE, {
-            {"text", std::string("[hyprglass] Invalid layers:mask_mode '") + std::string(maskMode) + "', expected 'auto', 'alpha', or 'region'. Falling back to 'auto'."},
+            {"text", std::string("[hyprglass] Invalid layers:mask_mode '") + std::string(maskMode) + "', expected 'auto', 'alpha', 'region' or 'contour'. Falling back to 'auto'."},
             {"time", (uint64_t)5000},
             {"color", CHyprColor{1.0, 0.8, 0.2, 1.0}},
         });

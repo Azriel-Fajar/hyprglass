@@ -37,9 +37,9 @@ inline constexpr int MAX_PRESET_INHERITANCE_DEPTH = 8;
 
 // Layer glass masking strategy: how hyprglass decides which pixels of a layer
 // surface get the glass effect.
-enum class ELayerMaskMode { AUTO, ALPHA, REGION };
+enum class ELayerMaskMode { AUTO, ALPHA, REGION, CONTOUR };
 
-// Parses "auto"/"alpha"/"region"; nullopt for anything else.
+// Parses "auto"/"alpha"/"region"/"contour"; nullopt for anything else.
 [[nodiscard]] std::optional<ELayerMaskMode> parseLayerMaskMode(std::string_view value);
 
 // Fixed glass shape of a layer namespace: the layer box inset per side and

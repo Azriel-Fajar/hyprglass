@@ -60,22 +60,21 @@ SSampleMap sampleMapFor(const CBox& box, int downscale) {
     return map;
 }
 
-bool sampleRegionCovered(const CBox& box, const SP<Render::IFramebuffer>& source, const CRegion& damage,
-                         const PHLMONITOR& monitor) {
-    if (!source)
+bool damageCoversBox(const CBox& box, const SP<Render::IFramebuffer>& framebuffer, const CRegion& damage,
+                     const PHLMONITOR& monitor) {
+    if (!framebuffer)
         return false;
 
-    // The exact source rect the blit reads, clipped like the blit itself: Hyprland
-    // clips element damage to the monitor, and the clipped-off padding is cleared.
-    const auto   map = sampleMapFor(box, 1);
-    const double x1  = std::max(map.srcX0, 0);
-    const double y1  = std::max(map.srcY0, 0);
-    const double x2  = std::min(map.srcX1, static_cast<int>(source->m_size.x));
-    const double y2  = std::min(map.srcY1, static_cast<int>(source->m_size.y));
+    // Hyprland clips element damage to the monitor, and what a blit reads beyond the
+    // framebuffer is cleared padding: neither can be missing from the damage.
+    const double x1 = std::max(box.x, 0.0);
+    const double y1 = std::max(box.y, 0.0);
+    const double x2 = std::min(box.x + box.w, framebuffer->m_size.x);
+    const double y2 = std::min(box.y + box.h, framebuffer->m_size.y);
     if (x2 <= x1 || y2 <= y1)
         return true;
 
-    // Render damage is in the rotated monitor space while the blit reads unrotated
+    // Render damage is in the rotated monitor space while the box is in unrotated
     // framebuffer pixels: transform it like Hyprland does for the output damage.
     CRegion framebufferDamage = damage.copy();
     if (monitor)
@@ -83,6 +82,15 @@ bool sampleRegionCovered(const CBox& box, const SP<Render::IFramebuffer>& source
                                     monitor->m_transformedSize.x, monitor->m_transformedSize.y);
 
     return CRegion(CBox{x1, y1, x2 - x1, y2 - y1}).subtract(framebufferDamage).empty();
+}
+
+bool sampleRegionCovered(const CBox& box, const SP<Render::IFramebuffer>& source, const CRegion& damage,
+                         const PHLMONITOR& monitor) {
+    // The exact source rect the blit reads.
+    const auto map = sampleMapFor(box, 1);
+    return damageCoversBox(CBox{static_cast<double>(map.srcX0), static_cast<double>(map.srcY0), static_cast<double>(map.srcX1 - map.srcX0),
+                                static_cast<double>(map.srcY1 - map.srcY0)},
+                           source, damage, monitor);
 }
 
 SFoldedBlur foldBlurPasses(float radius, int iterations) noexcept {
@@ -465,7 +473,7 @@ bool buildFrostCopy(const SP<Render::IFramebuffer>& sample, SP<Render::IFramebuf
 // The optional effects (ShaderVariants.hpp) this draw's resolved settings turn on.
 // Must stay GLASS_FEATURE_NONE whenever every effect is at its off value, so the
 // draw runs the default program.
-static GlassFeatureMask glassFeaturesFor(float edgeHeight, float focusLight, bool frost) {
+static GlassFeatureMask glassFeaturesFor(float edgeHeight, float focusLight, bool frost, bool contour) {
     GlassFeatureMask features = GLASS_FEATURE_NONE;
     if (edgeHeight > 0.0f)
         features |= GLASS_FEATURE_LENS_EDGE;
@@ -473,10 +481,13 @@ static GlassFeatureMask glassFeaturesFor(float edgeHeight, float focusLight, boo
         features |= GLASS_FEATURE_FOCUS_LIGHT;
     if (frost)
         features |= GLASS_FEATURE_FROST;
+    if (contour)
+        features |= GLASS_FEATURE_CONTOUR;
     return features;
 }
 
-static constexpr int FROST_TEXTURE_UNIT = 2; // 0 is the sample, 1 the layer surface mask
+static constexpr int FROST_TEXTURE_UNIT   = 2; // 0 is the sample, 1 the layer surface mask
+static constexpr int CONTOUR_TEXTURE_UNIT = 3; // layers only, so never at the same time as frost
 
 void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFramebuffer> targetFramebuffer,
                        CBox& rawBox, CBox& transformedBox,
@@ -497,11 +508,15 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     const float focusLightValue = !mask && focusLight > 0.0f ? std::min(focusLight, 1.0f) : 0.0f;
     // windows only, like the light
     const bool  frosted         = !mask && frost && frost->copy && frost->copy->getTexture() && frost->amount > Frost::MINIMUM_AMOUNT;
-    const auto  features        = glassFeaturesFor(edgeHeightValue, focusLightValue, frosted);
+    // layers only too, and only when the layer has a field to draw
+    const bool  wantsContour    = mask && mask->contourTextureId != 0 && mask->contourReferencePx > 0.0f;
+    const auto  features        = glassFeaturesFor(edgeHeightValue, focusLightValue, frosted, wantsContour);
 
     // Before any GL binding: a variant's first use compiles it, which rebinds the VAO and array buffer.
     const auto& program  = g_pGlobalState->shaderManager.glassProgram(features);
     const auto& uniforms = program.uniforms;
+    // A variant that failed to compile falls back to the default program: the layer then keeps its rectangle.
+    const bool  contoured = wantsContour && (program.features & GLASS_FEATURE_CONTOUR);
 
     const auto transform = Math::wlTransformToHyprutils(
         Math::invertTransform(g_pHyprRenderer->m_renderData.pMonitor->m_transform));
@@ -518,6 +533,12 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     if (frosted) {
         glActiveTexture(GL_TEXTURE0 + FROST_TEXTURE_UNIT);
         frost->copy->getTexture()->bind();
+        glActiveTexture(GL_TEXTURE0);
+    }
+
+    if (contoured) {
+        glActiveTexture(GL_TEXTURE0 + CONTOUR_TEXTURE_UNIT);
+        glBindTexture(GL_TEXTURE_2D, mask->contourTextureId);
         glActiveTexture(GL_TEXTURE0);
     }
 
@@ -547,7 +568,7 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     // Bezel, lens and refraction are sized and centred on it, not on the drawn box.
     Vector2D glassBoxOffsetPx{0.0, 0.0};
     Vector2D glassBoxSizePx = fullSize;
-    if (mask && mask->glassBoxSizePx.x >= 0.0 && mask->glassBoxSizePx.y >= 0.0) {
+    if (mask && !contoured && mask->glassBoxSizePx.x >= 0.0 && mask->glassBoxSizePx.y >= 0.0) {
         glassBoxOffsetPx = mask->glassBoxOffsetPx;
         glassBoxSizePx   = mask->glassBoxSizePx;
     }
@@ -562,7 +583,8 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
         static_cast<float>(glassBoxSizePx.y > 0.0 ? glassBoxOffsetPx.y / glassBoxSizePx.y : 0.0));
 
     // Reciprocals computed once per draw instead of once per pixel in the shader.
-    const float minDimensionPx = static_cast<float>(std::min(glassBoxSizePx.x, glassBoxSizePx.y));
+    // a contoured layer's edge is measured against a card's size, not the layer's
+    const float minDimensionPx = contoured ? mask->contourReferencePx : static_cast<float>(std::min(glassBoxSizePx.x, glassBoxSizePx.y));
     glUniform2f(uniforms.invFullSize,
         1.0f / static_cast<float>(fullSize.x), 1.0f / static_cast<float>(fullSize.y));
     glUniform1f(uniforms.invRoundingPower, 1.0f / safeRoundingPower);
@@ -624,6 +646,13 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
     if (features & GLASS_FEATURE_FROST) {
         glUniform1i(uniforms.frostTex, FROST_TEXTURE_UNIT);
         glUniform1f(uniforms.frostAmount, std::min(frost->amount, 1.0f));
+    }
+
+    if (contoured) {
+        glUniform1i(uniforms.contourTex, CONTOUR_TEXTURE_UNIT);
+        glUniform2f(uniforms.contourUVScale, static_cast<float>(mask->contourUVScale.x), static_cast<float>(mask->contourUVScale.y));
+        glUniform1f(uniforms.contourReferencePx, mask->contourReferencePx);
+        glUniform1f(uniforms.contourReachPx, mask->contourReachPx);
     }
 
     uploadThemeUniforms(resolveContext, program);

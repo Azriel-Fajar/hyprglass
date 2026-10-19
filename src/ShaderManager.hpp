@@ -76,6 +76,12 @@ struct SGlassUniforms {
     // GLASS_FEATURE_FROST variant only.
     GLint frostTex    = -1;
     GLint frostAmount = -1;
+
+    // GLASS_FEATURE_CONTOUR variant only.
+    GLint contourTex         = -1;
+    GLint contourUVScale     = -1;
+    GLint contourReferencePx = -1;
+    GLint contourReachPx     = -1;
 };
 
 struct SBlurUniforms {
@@ -83,11 +89,35 @@ struct SBlurUniforms {
     GLint radius    = -1;
 };
 
+// The programs that trace a layer's outline into a distance field (see Contour.hpp), and
+// where each reads its settings. Compiled together, the first time a layer asks for a field.
+struct SContourPrograms {
+    SP<CShader> seed   = makeShared<CShader>();
+    SP<CShader> edt    = makeShared<CShader>();
+    SP<CShader> smooth = makeShared<CShader>();
+    SP<CShader> pack   = makeShared<CShader>();
+
+    struct {
+        GLint tex = -1, boxOffsetPx = -1, boxSizePx = -1, sourceSizePx = -1, divisor = -1, threshold = -1;
+    } seedUniforms;
+    struct {
+        GLint tex = -1, fieldSize = -1, direction = -1, reachTexels = -1, resolveSigned = -1, texelPx = -1, reachPx = -1;
+    } edtUniforms;
+    struct {
+        GLint tex = -1, fieldSize = -1, direction = -1, radius = -1, negHalfInvSigmaSq = -1;
+    } smoothUniforms;
+    struct {
+        GLint tex = -1, fieldSize = -1, texelPx = -1;
+    } packUniforms;
+};
+
 // One compiled variant of the glass program, with the uniform locations of that program.
 struct SGlassProgram {
     SP<CShader>    shader = makeShared<CShader>();
     SGlassUniforms uniforms;
     bool           failed = false; // variants only; m_compileFailed covers the default program
+    // What this program really draws: none for the default program, a variant's own set once it compiled.
+    GlassFeatureMask features = GLASS_FEATURE_NONE;
 };
 
 class CShaderManager {
@@ -105,6 +135,10 @@ class CShaderManager {
     // program draws in its place. Only call once isInitialized().
     [[nodiscard]] SGlassProgram& glassProgram(GlassFeatureMask features);
 
+    // The contour field programs, compiled on first use. Null when they failed to compile:
+    // reported once, not retried before the plugin is reloaded.
+    [[nodiscard]] const SContourPrograms* contourPrograms();
+
     SP<CShader>    blurShader = makeShared<CShader>();
     SBlurUniforms  blurUniforms;
 
@@ -115,7 +149,12 @@ class CShaderManager {
     SGlassProgram                                       m_defaultGlass;
     std::unordered_map<GlassFeatureMask, SGlassProgram> m_glassVariants;
 
+    SContourPrograms m_contour;
+    bool             m_contourCompiled = false;
+    bool             m_contourFailed   = false;
+
     [[nodiscard]] static std::string loadShaderSource(const char* fileName);
     [[nodiscard]] static bool compileGlassProgram(SGlassProgram& program, GlassFeatureMask features);
     [[nodiscard]] bool compileBlurShader();
+    [[nodiscard]] bool compileContourPrograms();
 };
